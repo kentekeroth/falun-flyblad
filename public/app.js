@@ -12,6 +12,26 @@ const layerByWayId = new Map();
 const REFRESH_MS = 30_000;
 const POSTAL_COLOR = '#0277bd';
 
+// ─── Municipality boundary ────────────────────────────────────────────────────
+
+async function loadBoundary() {
+  try {
+    const res = await fetch('/api/boundary');
+    if (!res.ok) return;
+    const geojson = await res.json();
+    L.geoJSON(geojson, {
+      style: () => ({
+        color: '#1a5c34',
+        weight: 3,
+        opacity: 0.85,
+        dashArray: '12 6',
+        fill: false,
+        interactive: false,
+      }),
+    }).addTo(map);
+  } catch {}
+}
+
 // ─── Postal code reference layer ─────────────────────────────────────────────
 let postalRefLayer = null;
 
@@ -64,7 +84,7 @@ async function startApp() {
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('user-label').textContent = userName;
   initMap();
-  await Promise.all([loadRounds(), loadStreets(), loadPostalRefLayer()]);
+  await Promise.all([loadRounds(), loadStreets(), loadPostalRefLayer(), loadBoundary()]);
   setInterval(refreshCompletions, REFRESH_MS);
 }
 

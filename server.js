@@ -8,6 +8,7 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const STREETS_CACHE = path.join(DATA_DIR, 'streets.geojson');
 const POSTAL_CENTROIDS_CACHE = path.join(DATA_DIR, 'postal_centroids.geojson');
+const BOUNDARY_CACHE = path.join(DATA_DIR, 'boundary.geojson');
 const HIGHWAY_FILTER = 'residential|primary|secondary|tertiary|unclassified|living_street|service|footway|path|pedestrian';
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
 
@@ -144,6 +145,45 @@ async function getPostalCentroids() {
   return postalCentroidsCache;
 }
 
+// ─── Municipality boundary ────────────────────────────────────────────────────
+
+let boundaryCache = null;
+
+async function getBoundary() {
+  if (boundaryCache) return boundaryCache;
+  if (fs.existsSync(BOUNDARY_CACHE)) {
+    boundaryCache = JSON.parse(fs.readFileSync(BOUNDARY_CACHE, 'utf8'));
+    console.log('Boundary loaded from cache');
+    return boundaryCache;
+  }
+  console.log('Fetching Falun boundary from Overpass…');
+  const query = `[out:json][timeout:60];relation(300963);way(r:"outer");out geom;`;
+  const res = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'FalunFlyblad/1.0' },
+    body: new URLSearchParams({ data: query }),
+    signal: AbortSignal.timeout(70_000),
+  });
+  if (!res.ok) throw new Error(`Overpass returned HTTP ${res.status}`);
+  const data = await res.json();
+
+  const geojson = {
+    type: 'FeatureCollection',
+    features: data.elements
+      .filter(e => e.geometry?.length > 1)
+      .map(way => ({
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'LineString', coordinates: way.geometry.map(p => [p.lon, p.lat]) },
+      })),
+  };
+
+  fs.writeFileSync(BOUNDARY_CACHE, JSON.stringify(geojson));
+  boundaryCache = geojson;
+  console.log(`Boundary cached (${geojson.features.length} segments)`);
+  return geojson;
+}
+
 // ─── Express setup ────────────────────────────────────────────────────────────
 
 app.use(express.json());
@@ -170,6 +210,13 @@ app.delete('/api/streets/cache', (_req, res) => {
 
 app.get('/api/postalcodes', async (_req, res) => {
   try { res.json(await getPostalCentroids()); }
+  catch (err) { res.status(503).json({ error: err.message }); }
+});
+
+// ─── Boundary ─────────────────────────────────────────────────────────────────
+
+app.get('/api/boundary', async (_req, res) => {
+  try { res.json(await getBoundary()); }
   catch (err) { res.status(503).json({ error: err.message }); }
 });
 
