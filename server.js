@@ -19,6 +19,8 @@ const db = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
 });
+let dbReady = false;
+let dbError = null;
 
 async function initDB() {
   await db.query(`
@@ -268,10 +270,12 @@ app.post('/api/rounds/:id/completions/bulk', async (req, res) => {
 
 // ─── Health ───────────────────────────────────────────────────────────────────
 
-app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/health', (_req, res) => res.json({ ok: true, db: dbReady, dbError }));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => console.log(`Flyblad-koordinator körs på port ${PORT}`));
 
-initDB().catch(err => { console.error('DB init failed:', err); process.exit(1); });
+initDB()
+  .then(() => { dbReady = true; console.log('DB klar'); })
+  .catch(err => { console.error('DB init failed:', err.message); dbError = err.message; });
