@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flyblad Falun</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Login overlay -->
+<div id="login-overlay">
+  <div class="login-card">
+    <h1>Flyblad Falun</h1>
+    <p>Ange ditt namn för att logga in och börja markera utdelade gator.</p>
+    <form id="login-form">
+      <input id="name-input" type="text" placeholder="Ditt namn" autocomplete="name" maxlength="40" required>
+      <button type="submit">Logga in</button>
+    </form>
+  </div>
+</div>
+
+<!-- App shell -->
+<header>
+  <span class="app-title">Flyblad Falun</span>
+
+  <div class="round-controls">
+    <select id="round-select">
+      <option value="">— Välj omgång —</option>
+    </select>
+    <button id="new-round-btn">+ Ny omgång</button>
+  </div>
+
+  <div class="user-info">
+    <span id="streets-status"></span>
+    <span>Inloggad: <strong id="user-label"></strong>
+      <span id="my-color-dot" class="color-dot"></span>
+    </span>
+    <button id="logout-btn">Byt namn</button>
+  </div>
+</header>
+
+<div id="map"></div>
+
+<footer>
+  <div class="footer-top">
+    <span id="progress-text">Välj en omgång för att se statistik</span>
+    <button id="refresh-btn" title="Uppdatera">↻ Uppdatera</button>
+  </div>
+  <div id="progress-bar" class="progress-bar"><div class="progress-empty"></div></div>
+  <div id="volunteer-legend" class="legend"></div>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

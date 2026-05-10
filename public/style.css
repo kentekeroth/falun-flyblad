@@ -1,0 +1,204 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  background: #f0f0f0;
+}
+
+/* ── Header ── */
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  height: 52px;
+  background: #1a5c34;
+  color: #fff;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.app-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.round-controls {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+header select,
+header button {
+  font-size: 13px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+header select option { background: #1a5c34; }
+header button:hover { background: rgba(255,255,255,0.28); }
+#logout-btn { background: transparent; font-size: 12px; padding: 4px 8px; }
+
+#streets-status { font-size: 12px; opacity: 0.75; }
+
+/* ── Map ── */
+#map { flex: 1; min-height: 0; }
+
+/* Leaflet tooltip override */
+.street-tip {
+  font-size: 12px;
+  background: rgba(0,0,0,0.72);
+  color: #fff;
+  border: none;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ── Footer ── */
+footer {
+  padding: 8px 14px 10px;
+  background: #fff;
+  border-top: 1px solid #ddd;
+  flex-shrink: 0;
+}
+
+.footer-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+#progress-text { color: #444; font-size: 13px; }
+
+#refresh-btn {
+  font-size: 12px;
+  padding: 3px 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #f5f5f5;
+  cursor: pointer;
+}
+#refresh-btn:hover { background: #e8e8e8; }
+
+.progress-bar {
+  height: 14px;
+  background: #e8e8e8;
+  border-radius: 7px;
+  overflow: hidden;
+  display: flex;
+  margin-bottom: 8px;
+}
+.progress-empty { flex: 1; }
+.progress-segment {
+  height: 100%;
+  transition: width 0.4s ease;
+  min-width: 0;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  color: #444;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* ── Login overlay ── */
+#login-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 40, 20, 0.87);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 2rem 2rem 1.75rem;
+  width: min(340px, 92vw);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+}
+.login-card h1 {
+  font-size: 1.5rem;
+  color: #1a5c34;
+  margin-bottom: 0.5rem;
+}
+.login-card p {
+  color: #555;
+  line-height: 1.5;
+  margin-bottom: 1.25rem;
+}
+.login-card input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid #ddd;
+  border-radius: 8px;
+  font-size: 15px;
+  margin-bottom: 12px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.login-card input:focus { border-color: #1a5c34; }
+.login-card button {
+  width: 100%;
+  padding: 11px;
+  background: #1a5c34;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.login-card button:hover { background: #155029; }
+
+/* ── Popup unmark button ── */
+.popup-unmark-btn {
+  margin-top: 8px;
+  padding: 5px 12px;
+  background: #c0392b;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.popup-unmark-btn:hover { background: #a93226; }
