@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const STREETS_CACHE = path.join(DATA_DIR, 'streets.geojson');
 const POSTAL_CENTROIDS_CACHE = path.join(DATA_DIR, 'postal_centroids.geojson');
-const HIGHWAY_FILTER = 'residential|primary|secondary|tertiary|unclassified|living_street';
+const HIGHWAY_FILTER = 'residential|primary|secondary|tertiary|unclassified|living_street|service|footway|path|pedestrian';
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
