@@ -6,7 +6,8 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "pg": "^8.20.0"
   },
   "engines": {
     "node": ">=18"

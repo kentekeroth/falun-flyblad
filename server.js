@@ -1,40 +1,51 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const STREETS_CACHE = path.join(DATA_DIR, 'streets.geojson');
 const POSTAL_CENTROIDS_CACHE = path.join(DATA_DIR, 'postal_centroids.geojson');
-
 const HIGHWAY_FILTER = 'residential|primary|secondary|tertiary|unclassified|living_street';
-
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// ─── Persistent state (JSON file) ─────────────────────────────────────────────
+// ─── PostgreSQL ───────────────────────────────────────────────────────────────
 
-// Shape: { rounds: [...], volunteers: [...], completions: [...] }
-function loadState() {
-  try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-  } catch {
-    return { rounds: [], volunteers: [], completions: [] };
-  }
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+});
+
+async function initDB() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS rounds (
+      id BIGINT PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS volunteers (
+      round_id BIGINT NOT NULL,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
+      PRIMARY KEY (round_id, name)
+    );
+    CREATE TABLE IF NOT EXISTS completions (
+      round_id BIGINT NOT NULL,
+      way_id TEXT NOT NULL,
+      volunteer_name TEXT NOT NULL,
+      marked_at TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'manual',
+      PRIMARY KEY (round_id, way_id)
+    );
+  `);
+  console.log('Databas initialiserad');
 }
 
-function saveState(state) {
-  const tmp = STATE_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(state));
-  fs.renameSync(tmp, STATE_FILE);
-}
-
-let state = loadState();
-
-// ─── Street data (Overpass API + disk cache) ──────────────────────────────────
+// ─── Street data (Overpass + disk cache) ──────────────────────────────────────
 
 let streetsCache = null;
 let postalCentroidsCache = null;
@@ -47,7 +58,7 @@ async function getStreets() {
     return streetsCache;
   }
   console.log('Fetching streets from Overpass API…');
-  // OSM relation 300963 = Falu kommun; area ID = relation ID + 3600000000
+  // OSM relation 300963 = Falu kommun
   const query = `[out:json][timeout:180];area(3600300963)->.kommun;way["highway"~"^(${HIGHWAY_FILTER})$"](area.kommun);out geom;`;
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
@@ -56,7 +67,7 @@ async function getStreets() {
       'User-Agent': 'FalunFlyblad/1.0',
     },
     body: new URLSearchParams({ data: query }),
-    signal: AbortSignal.timeout(100_000),
+    signal: AbortSignal.timeout(200_000),
   });
   if (!res.ok) throw new Error(`Overpass returned HTTP ${res.status}`);
   const data = await res.json();
@@ -147,118 +158,119 @@ app.get('/api/streets', async (_req, res) => {
   }
 });
 
-app.get('/api/postalcodes', async (_req, res) => {
-  try { res.json(await getPostalCentroids()); }
-  catch (err) { res.status(503).json({ error: err.message }); }
-});
-
 app.delete('/api/streets/cache', (_req, res) => {
   if (fs.existsSync(STREETS_CACHE)) fs.unlinkSync(STREETS_CACHE);
   streetsCache = null;
   res.json({ ok: true });
 });
 
-// ─── Rounds ───────────────────────────────────────────────────────────────────
+// ─── Postal codes ─────────────────────────────────────────────────────────────
 
-app.get('/api/rounds', (_req, res) => {
-  res.json([...state.rounds].sort((a, b) => b.created_at.localeCompare(a.created_at)));
+app.get('/api/postalcodes', async (_req, res) => {
+  try { res.json(await getPostalCentroids()); }
+  catch (err) { res.status(503).json({ error: err.message }); }
 });
 
-app.post('/api/rounds', (req, res) => {
+// ─── Rounds ───────────────────────────────────────────────────────────────────
+
+app.get('/api/rounds', async (_req, res) => {
+  const { rows } = await db.query('SELECT id, name, created_at FROM rounds ORDER BY created_at DESC');
+  res.json(rows);
+});
+
+app.post('/api/rounds', async (req, res) => {
   const name = req.body?.name?.trim();
   if (!name) return res.status(400).json({ error: 'Namn krävs' });
-  if (state.rounds.some(r => r.name === name)) {
-    return res.status(409).json({ error: 'En omgång med det namnet finns redan' });
+  const id = Date.now();
+  const created_at = new Date().toISOString();
+  try {
+    await db.query('INSERT INTO rounds (id, name, created_at) VALUES ($1, $2, $3)', [id, name, created_at]);
+    res.json({ id, name, created_at });
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'En omgång med det namnet finns redan' });
+    throw err;
   }
-  const round = { id: Date.now(), name, created_at: new Date().toISOString() };
-  state.rounds.push(round);
-  saveState(state);
-  res.json(round);
 });
 
 // ─── Volunteers ───────────────────────────────────────────────────────────────
 
-app.post('/api/rounds/:id/join', (req, res) => {
+app.post('/api/rounds/:id/join', async (req, res) => {
   const roundId = Number(req.params.id);
   const name = req.body?.name?.trim();
   if (!name) return res.status(400).json({ error: 'Namn krävs' });
 
-  const existing = state.volunteers.find(v => v.round_id === roundId && v.name === name);
-  if (existing) return res.json(existing);
+  const { rows: existing } = await db.query(
+    'SELECT round_id, name, color FROM volunteers WHERE round_id = $1 AND name = $2',
+    [roundId, name]
+  );
+  if (existing.length) return res.json(existing[0]);
 
-  const taken = state.volunteers.filter(v => v.round_id === roundId).map(v => v.color);
-  const color = COLORS.find(c => !taken.includes(c)) ?? COLORS[taken.length % COLORS.length];
+  const { rows: taken } = await db.query('SELECT color FROM volunteers WHERE round_id = $1', [roundId]);
+  const takenColors = taken.map(v => v.color);
+  const color = COLORS.find(c => !takenColors.includes(c)) ?? COLORS[takenColors.length % COLORS.length];
 
-  const volunteer = { round_id: roundId, name, color };
-  state.volunteers.push(volunteer);
-  saveState(state);
-  res.json(volunteer);
+  await db.query('INSERT INTO volunteers (round_id, name, color) VALUES ($1, $2, $3)', [roundId, name, color]);
+  res.json({ round_id: roundId, name, color });
 });
 
 // ─── Completions ──────────────────────────────────────────────────────────────
 
 app.get('/api/rounds/:id/completions', async (req, res) => {
   const roundId = Number(req.params.id);
-  const completions = state.completions
-    .filter(c => c.round_id === roundId)
-    .map(({ way_id, volunteer_name, marked_at, source }) => ({ way_id, volunteer_name, marked_at, source: source ?? 'manual' }));
-  const volunteers = state.volunteers
-    .filter(v => v.round_id === roundId)
-    .map(({ name, color }) => ({ name, color }));
-
+  const [{ rows: completions }, { rows: volunteers }] = await Promise.all([
+    db.query('SELECT way_id, volunteer_name, marked_at, source FROM completions WHERE round_id = $1', [roundId]),
+    db.query('SELECT name, color FROM volunteers WHERE round_id = $1', [roundId]),
+  ]);
   let totalStreets = 0;
   try { totalStreets = (await getStreets()).features.length; } catch {}
-
   res.json({ completions, volunteers, totalStreets });
 });
 
-app.post('/api/rounds/:id/completions', (req, res) => {
+app.post('/api/rounds/:id/completions', async (req, res) => {
   const roundId = Number(req.params.id);
   const { wayId, volunteerName } = req.body ?? {};
   if (!wayId || !volunteerName) return res.status(400).json({ error: 'wayId och volunteerName krävs' });
-
-  const idx = state.completions.findIndex(c => c.round_id === roundId && c.way_id === String(wayId));
-  const entry = { round_id: roundId, way_id: String(wayId), volunteer_name: volunteerName, marked_at: new Date().toISOString() };
-  if (idx >= 0) {
-    state.completions[idx] = entry;
-  } else {
-    state.completions.push(entry);
-  }
-  saveState(state);
+  await db.query(
+    `INSERT INTO completions (round_id, way_id, volunteer_name, marked_at, source)
+     VALUES ($1, $2, $3, $4, 'manual')
+     ON CONFLICT (round_id, way_id) DO UPDATE SET volunteer_name = $3, marked_at = $4, source = 'manual'`,
+    [roundId, String(wayId), volunteerName, new Date().toISOString()]
+  );
   res.json({ ok: true });
 });
 
-app.delete('/api/rounds/:id/completions/:wayId', (req, res) => {
+app.delete('/api/rounds/:id/completions/:wayId', async (req, res) => {
   const roundId = Number(req.params.id);
   const wayId = req.params.wayId;
   const volunteerName = req.query.volunteer;
   if (!volunteerName) return res.status(400).json({ error: 'volunteer query-param krävs' });
-
-  const before = state.completions.length;
-  state.completions = state.completions.filter(
-    c => !(c.round_id === roundId && c.way_id === wayId && c.volunteer_name === volunteerName)
+  const { rowCount } = await db.query(
+    'DELETE FROM completions WHERE round_id = $1 AND way_id = $2 AND volunteer_name = $3',
+    [roundId, wayId, volunteerName]
   );
-  if (state.completions.length < before) saveState(state);
-  res.json({ ok: true, deleted: state.completions.length < before });
+  res.json({ ok: true, deleted: rowCount > 0 });
 });
 
-app.post('/api/rounds/:id/completions/bulk', (req, res) => {
+app.post('/api/rounds/:id/completions/bulk', async (req, res) => {
   const roundId = Number(req.params.id);
   const { wayIds, volunteerName, source = 'postal' } = req.body ?? {};
   if (!Array.isArray(wayIds) || !wayIds.length || !volunteerName) {
     return res.status(400).json({ error: 'wayIds (array) och volunteerName krävs' });
   }
-  const now = new Date().toISOString();
-  let added = 0;
-  for (const wayId of wayIds) {
-    const exists = state.completions.some(c => c.round_id === roundId && c.way_id === String(wayId));
-    if (!exists) {
-      state.completions.push({ round_id: roundId, way_id: String(wayId), volunteer_name: volunteerName, marked_at: now, source });
-      added++;
-    }
-  }
-  if (added > 0) saveState(state);
-  res.json({ ok: true, added });
+  const { rowCount } = await db.query(
+    `INSERT INTO completions (round_id, way_id, volunteer_name, marked_at, source)
+     SELECT $1, unnest($2::text[]), $3, $4, $5
+     ON CONFLICT DO NOTHING`,
+    [roundId, wayIds.map(String), volunteerName, new Date().toISOString(), source]
+  );
+  res.json({ ok: true, added: rowCount });
 });
 
-app.listen(PORT, () => console.log(`Flyblad-koordinator körs på port ${PORT}`));
+// ─── Start ────────────────────────────────────────────────────────────────────
+
+async function start() {
+  await initDB();
+  app.listen(PORT, () => console.log(`Flyblad-koordinator körs på port ${PORT}`));
+}
+
+start().catch(err => { console.error('Startup failed:', err); process.exit(1); });
