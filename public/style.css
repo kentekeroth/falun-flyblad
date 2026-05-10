@@ -181,7 +181,7 @@ footer {
   transition: border-color 0.15s;
 }
 .login-card input:focus { border-color: #1a5c34; }
-.login-card button {
+.login-card form button {
   width: 100%;
   padding: 11px;
   background: #1a5c34;
@@ -193,7 +193,27 @@ footer {
   cursor: pointer;
   transition: background 0.15s;
 }
-.login-card button:hover { background: #155029; }
+.login-card form button:hover { background: #155029; }
+
+.user-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.user-list button {
+  padding: 7px 16px;
+  background: #f0f7f3;
+  color: #1a5c34;
+  border: 1.5px solid #1a5c34;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  width: auto;
+}
+.user-list button:hover { background: #1a5c34; color: #fff; }
 
 /* ── Postal code reference labels ── */
 .postal-label {

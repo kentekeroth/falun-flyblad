@@ -246,6 +246,11 @@ app.post('/api/rounds', async (req, res) => {
 
 // ─── Volunteers ───────────────────────────────────────────────────────────────
 
+app.get('/api/volunteers', async (_req, res) => {
+  const { rows } = await db.query('SELECT DISTINCT name FROM volunteers ORDER BY name');
+  res.json(rows.map(r => r.name));
+});
+
 app.post('/api/rounds/:id/join', async (req, res) => {
   const roundId = Number(req.params.id);
   const name = req.body?.name?.trim();

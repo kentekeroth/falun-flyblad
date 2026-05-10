@@ -77,8 +77,37 @@ async function init() {
   userName = localStorage.getItem('flyblad-user');
   if (!userName) {
     document.getElementById('login-overlay').style.display = 'flex';
+    loadExistingUsers();
     return;
   }
+  startApp();
+}
+
+async function loadExistingUsers() {
+  try {
+    const res = await fetch('/api/volunteers');
+    if (!res.ok) return;
+    const names = await res.json();
+    if (!names.length) return;
+    const list = document.getElementById('user-list');
+    list.hidden = false;
+    names.forEach(name => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = name;
+      btn.onclick = () => loginAs(name);
+      list.appendChild(btn);
+    });
+    document.getElementById('login-desc').textContent = 'Välj ditt namn eller ange ett nytt nedan.';
+    document.getElementById('name-input').placeholder = 'Nytt namn…';
+    document.getElementById('name-input').removeAttribute('required');
+  } catch {}
+}
+
+function loginAs(name) {
+  localStorage.setItem('flyblad-user', name);
+  userName = name;
+  document.getElementById('login-overlay').style.display = 'none';
   startApp();
 }
 
@@ -95,9 +124,7 @@ document.getElementById('login-form').addEventListener('submit', e => {
   e.preventDefault();
   const name = document.getElementById('name-input').value.trim();
   if (!name) return;
-  localStorage.setItem('flyblad-user', name);
-  userName = name;
-  startApp();
+  loginAs(name);
 });
 
 document.getElementById('logout-btn').addEventListener('click', () => {
