@@ -102,10 +102,19 @@ async function loadStreets() {
     }
     const geojson = await res.json();
 
+    // Visual layer — non-interactive, used only for styling
     L.geoJSON(geojson, {
       style: f => streetStyle(f.properties.id),
+      interactive: false,
       onEachFeature(feature, layer) {
         layerByWayId.set(feature.properties.id, layer);
+      },
+    }).addTo(map);
+
+    // Hit-target layer — wide transparent lines for easy finger tapping on mobile
+    L.geoJSON(geojson, {
+      style: () => ({ weight: 20, opacity: 0, color: '#000' }),
+      onEachFeature(feature, layer) {
         if (feature.properties.name) {
           layer.bindTooltip(feature.properties.name, {
             sticky: true,
@@ -113,7 +122,7 @@ async function loadStreets() {
           });
         }
         layer.on('click', e => {
-          if (drawActive) return; // låt klicket bubbla till kartans draw-hanterare
+          if (drawActive) return;
           L.DomEvent.stopPropagation(e);
           handleStreetClick(e, feature);
         });
@@ -143,7 +152,6 @@ function refreshStreetStyles() {
 }
 
 async function handleStreetClick(e, feature) {
-  L.DomEvent.stopPropagation(e);
   if (!currentRoundId) {
     setStatus('Välj eller skapa en omgång ovan först.', 3000);
     return;
