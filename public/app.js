@@ -17,19 +17,21 @@ const POSTAL_COLOR = '#0277bd';
 async function loadBoundary() {
   try {
     const res = await fetch('/api/boundary');
-    if (!res.ok) return;
+    if (!res.ok) { console.warn('Boundary API error', res.status); return; }
     const geojson = await res.json();
+    if (!geojson.features?.length) { console.warn('Boundary: inga segment'); return; }
+    console.log('Boundary:', geojson.features.length, 'segment');
     L.geoJSON(geojson, {
       style: () => ({
         color: '#1a5c34',
-        weight: 3,
-        opacity: 0.85,
+        weight: 4,
+        opacity: 1,
         dashArray: '12 6',
         fill: false,
         interactive: false,
       }),
     }).addTo(map);
-  } catch {}
+  } catch (e) { console.error('Boundary load failed:', e); }
 }
 
 // ─── Postal code reference layer ─────────────────────────────────────────────

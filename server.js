@@ -161,8 +161,8 @@ async function getBoundary() {
     fs.unlinkSync(BOUNDARY_CACHE); // tom cache — hämta om
   }
   console.log('Fetching Falun boundary from Overpass…');
-  // Hämta relationen med all membergeometri inbakad
-  const query = `[out:json][timeout:60];relation(300963);out geom;`;
+  // Välj relationen → hämta alla memberways med geometri
+  const query = `[out:json][timeout:60];relation(300963)->.r;way(r.r);out geom;`;
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'FalunFlyblad/1.0' },
@@ -172,13 +172,12 @@ async function getBoundary() {
   if (!res.ok) throw new Error(`Overpass returned HTTP ${res.status}`);
   const data = await res.json();
 
-  const rel = data.elements.find(e => e.type === 'relation');
-  const features = (rel?.members ?? [])
-    .filter(m => m.type === 'way' && m.geometry?.length > 1)
-    .map(m => ({
+  const features = data.elements
+    .filter(e => e.type === 'way' && e.geometry?.length > 1)
+    .map(e => ({
       type: 'Feature',
       properties: {},
-      geometry: { type: 'LineString', coordinates: m.geometry.map(p => [p.lon, p.lat]) },
+      geometry: { type: 'LineString', coordinates: e.geometry.map(p => [p.lon, p.lat]) },
     }));
 
   const geojson = { type: 'FeatureCollection', features };
