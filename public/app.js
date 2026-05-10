@@ -10,6 +10,45 @@ let map = null;
 const layerByWayId = new Map();
 
 const REFRESH_MS = 30_000;
+const POSTAL_COLOR = '#0277bd';
+
+// ─── Postal code reference layer ─────────────────────────────────────────────
+let postalRefLayer = null;
+
+async function loadPostalRefLayer() {
+  if (postalRefLayer) return;
+  try {
+    const res = await fetch('/api/postalcodes');
+    if (!res.ok) return;
+    const geojson = await res.json();
+    postalRefLayer = L.geoJSON(geojson, {
+      pointToLayer(feature, latlng) {
+        return L.marker(latlng, {
+          icon: L.divIcon({
+            className: 'postal-label',
+            html: `<span>${feature.properties.postalCode}</span>`,
+            iconSize: null,
+          }),
+          interactive: false,
+        });
+      },
+    });
+  } catch {}
+}
+
+function showPostalRefLayer() {
+  if (postalRefLayer) postalRefLayer.addTo(map);
+}
+
+function hidePostalRefLayer() {
+  if (postalRefLayer) map.removeLayer(postalRefLayer);
+}
+
+// ─── Draw state ───────────────────────────────────────────────────────────────
+let drawActive = false;
+const drawPoints = [];   // [[lat, lng], ...]
+let drawPolyline = null;
+let drawPolygon  = null;
 
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 async function init() {
@@ -25,7 +64,7 @@ async function startApp() {
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('user-label').textContent = userName;
   initMap();
-  await Promise.all([loadRounds(), loadStreets()]);
+  await Promise.all([loadRounds(), loadStreets(), loadPostalRefLayer()]);
   setInterval(refreshCompletions, REFRESH_MS);
 }
 
@@ -73,7 +112,11 @@ async function loadStreets() {
             className: 'street-tip',
           });
         }
-        layer.on('click', e => handleStreetClick(e, feature));
+        layer.on('click', e => {
+          if (drawActive) return; // låt klicket bubbla till kartans draw-hanterare
+          L.DomEvent.stopPropagation(e);
+          handleStreetClick(e, feature);
+        });
       },
     }).addTo(map);
 
@@ -88,6 +131,9 @@ async function loadStreets() {
 function streetStyle(wayId) {
   const comp = completions.get(wayId);
   if (!comp) return { color: '#bbb', weight: 3, opacity: 0.55, interactive: true };
+  if (comp.source === 'postal') {
+    return { color: POSTAL_COLOR, weight: 5, opacity: 0.9, dashArray: '10 5', interactive: true };
+  }
   const color = volunteerColors.get(comp.volunteer_name) ?? '#888';
   return { color, weight: 6, opacity: 1, interactive: true };
 }
@@ -114,24 +160,165 @@ async function handleStreetClick(e, feature) {
   const streetName = feature.properties.name || 'Okänd gata';
   const dt = new Date(comp.marked_at);
   const formatted = dt.toLocaleString('sv-SE', { dateStyle: 'short', timeStyle: 'short' });
+  const isPostal = comp.source === 'postal';
+  const byLine = isPostal
+    ? `<span style="color:${POSTAL_COLOR};font-weight:600">Postutdelat</span> av <b>${comp.volunteer_name}</b>`
+    : `Markerad av <b>${comp.volunteer_name}</b>`;
   const unmarkBtn = comp.volunteer_name === userName
     ? `<br><button class="popup-unmark-btn" onclick="popupUnmark('${wayId}')">Avmarkera</button>`
     : '';
 
   L.popup()
     .setLatLng(e.latlng)
-    .setContent(
-      `<b>${streetName}</b><br>` +
-      `Markerad av <b>${comp.volunteer_name}</b><br>` +
-      `${formatted}` +
-      unmarkBtn
-    )
+    .setContent(`<b>${streetName}</b><br>${byLine}<br>${formatted}${unmarkBtn}`)
     .openOn(map);
 }
 
 async function popupUnmark(wayId) {
   map.closePopup();
   await unmarkStreet(wayId);
+}
+
+// ─── Postal / draw-area marking ───────────────────────────────────────────────
+
+function pointInPolygon(point, ring) {
+  const [px, py] = point;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function getStreetsInRing(ring) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const [x, y] of ring) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  const ids = [];
+  layerByWayId.forEach((layer, wayId) => {
+    const lls = layer.getLatLngs();
+    if (!lls.length) return;
+    const mid = lls[Math.floor(lls.length / 2)];
+    const x = mid.lng, y = mid.lat;
+    if (x < minX || x > maxX || y < minY || y > maxY) return;
+    if (pointInPolygon([x, y], ring)) ids.push(wayId);
+  });
+  return ids;
+}
+
+function startDraw() {
+  drawActive = true;
+  drawPoints.length = 0;
+  if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
+  if (drawPolygon)  { map.removeLayer(drawPolygon);  drawPolygon  = null; }
+  map.getContainer().style.cursor = 'crosshair';
+  map.doubleClickZoom.disable();
+  map.on('click', drawAddPoint);
+  map.on('dblclick', drawFinish);
+  showPostalRefLayer();
+  document.getElementById('post-btn').classList.add('active');
+  document.getElementById('draw-panel').hidden = false;
+  document.getElementById('draw-hint').textContent = 'Klicka på kartan för att rita område. Dubbelklicka för att avsluta.';
+  document.getElementById('draw-finish-btn').disabled = true;
+  document.getElementById('draw-confirm-btn').hidden = true;
+}
+
+function drawAddPoint(e) {
+  drawPoints.push([e.latlng.lat, e.latlng.lng]);
+  if (drawPolyline) map.removeLayer(drawPolyline);
+  if (drawPoints.length >= 2) {
+    drawPolyline = L.polyline([...drawPoints, drawPoints[0]], {
+      color: POSTAL_COLOR, weight: 2, dashArray: '6 4',
+    }).addTo(map);
+  }
+  document.getElementById('draw-finish-btn').disabled = drawPoints.length < 3;
+}
+
+function drawFinish(e) {
+  if (!e._synth) L.DomEvent.stop(e);
+  if (drawPoints.length < 3) return;
+  map.off('click', drawAddPoint);
+  map.off('dblclick', drawFinish);
+  map.getContainer().style.cursor = '';
+  map.doubleClickZoom.enable();
+  drawActive = false;
+
+  if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
+  // Remove last duplicate point from double-click (not from button)
+  if (!e._synth) drawPoints.pop();
+  if (drawPoints.length < 3) { cancelDraw(); return; }
+
+  drawPolygon = L.polygon(drawPoints, { color: POSTAL_COLOR, weight: 2, fillOpacity: 0.15 }).addTo(map);
+
+  const ring = drawPoints.map(([lat, lng]) => [lng, lat]);
+  const inside = getStreetsInRing(ring);
+  const unmarked = inside.filter(id => !completions.has(id));
+
+  document.getElementById('draw-hint').textContent =
+    `${inside.length} gator inom området (${unmarked.length} omärkta).`;
+  document.getElementById('draw-finish-btn').hidden = true;
+  document.getElementById('draw-confirm-btn').hidden = false;
+  document.getElementById('draw-confirm-btn').disabled = unmarked.length === 0;
+  document.getElementById('draw-confirm-btn').dataset.wayids = JSON.stringify(unmarked);
+}
+
+async function drawConfirm() {
+  if (!currentRoundId) { setStatus('Välj en omgång först.', 3000); return; }
+  const btn = document.getElementById('draw-confirm-btn');
+  const wayIds = JSON.parse(btn.dataset.wayids || '[]');
+  if (!wayIds.length) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Markerar…';
+
+  const res = await fetch(`/api/rounds/${currentRoundId}/completions/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wayIds, volunteerName: userName, source: 'postal' }),
+  });
+
+  if (res.ok) {
+    const { added } = await res.json();
+    const now = new Date().toISOString();
+    wayIds.forEach(id => {
+      completions.set(id, { volunteer_name: userName, marked_at: now, source: 'postal' });
+      layerByWayId.get(id)?.setStyle(streetStyle(id));
+    });
+    updateProgress();
+    setStatus(`${added} gator markerade som postutdelade.`, 4000);
+  } else {
+    setStatus('Kunde inte markera gator.', 3000);
+  }
+  cancelDraw();
+}
+
+function drawFinishBtn() {
+  map.off('click', drawAddPoint);
+  map.off('dblclick', drawFinish);
+  drawFinish({ preventDefault() {}, stopPropagation() {}, latlng: null, _synth: true });
+}
+
+function cancelDraw() {
+  drawActive = false;
+  drawPoints.length = 0;
+  map.off('click', drawAddPoint);
+  map.off('dblclick', drawFinish);
+  map.getContainer().style.cursor = '';
+  map.doubleClickZoom.enable();
+  if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
+  if (drawPolygon)  { map.removeLayer(drawPolygon);  drawPolygon  = null; }
+  document.getElementById('draw-panel').hidden = true;
+  document.getElementById('post-btn').classList.remove('active');
+  hidePostalRefLayer();
+  document.getElementById('draw-finish-btn').hidden = false;
+  document.getElementById('draw-confirm-btn').hidden = true;
+  document.getElementById('draw-finish-btn').disabled = true;
 }
 
 // ─── Completions API ──────────────────────────────────────────────────────────
@@ -228,6 +415,7 @@ document.getElementById('new-round-btn').addEventListener('click', async () => {
 });
 
 document.getElementById('refresh-btn').addEventListener('click', refreshCompletions);
+document.getElementById('post-btn').addEventListener('click', startDraw);
 
 async function selectRound(roundId) {
   currentRoundId = roundId;
@@ -253,9 +441,14 @@ function updateProgress() {
   const total = totalStreets;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
+  const postalDone = [...completions.values()].filter(c => c.source === 'postal').length;
+  const manualDone = done - postalDone;
+  const details = postalDone > 0
+    ? ` (${manualDone} manuellt + ${postalDone} post)`
+    : '';
   document.getElementById('progress-text').textContent =
     total > 0
-      ? `${pct}% av Falun klart — ${done} av ${total} gator utdelade`
+      ? `${pct}% av Falun klart — ${done} av ${total} gator utdelade${details}`
       : 'Laddar gatadata…';
 
   // Count per volunteer

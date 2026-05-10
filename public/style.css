@@ -15,7 +15,7 @@ header {
   align-items: center;
   gap: 12px;
   padding: 0 14px;
-  height: 52px;
+  min-height: 52px;
   background: #1a5c34;
   color: #fff;
   flex-shrink: 0;
@@ -60,8 +60,13 @@ header button:hover { background: rgba(255,255,255,0.28); }
 
 #streets-status { font-size: 12px; opacity: 0.75; }
 
-/* ── Map ── */
-#map { flex: 1; min-height: 0; }
+/* ── Map wrapper (needed for draw-panel positioning) ── */
+.map-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+#map { width: 100%; height: 100%; }
 
 /* Leaflet tooltip override */
 .street-tip {
@@ -189,6 +194,76 @@ footer {
   transition: background 0.15s;
 }
 .login-card button:hover { background: #155029; }
+
+/* ── Postal code reference labels ── */
+.postal-label {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.postal-label span {
+  display: inline-block;
+  background: rgba(2, 119, 189, 0.85);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  letter-spacing: 0.03em;
+}
+
+/* ── Post button active state ── */
+#post-btn.active {
+  background: #0277bd;
+  border-color: #01579b;
+  color: #fff;
+}
+
+/* ── Draw panel ── */
+.draw-panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: #fff;
+  border-top: 2px solid #0277bd;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.12);
+}
+#draw-hint {
+  flex: 1;
+  font-size: 13px;
+  color: #333;
+  min-width: 180px;
+}
+.draw-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.draw-actions button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  background: #f5f5f5;
+  font-size: 13px;
+  cursor: pointer;
+}
+.draw-actions button:hover { background: #e8e8e8; }
+.draw-actions button:disabled { opacity: 0.4; cursor: default; }
+.draw-confirm-btn {
+  background: #0277bd !important;
+  color: #fff !important;
+  border-color: #01579b !important;
+}
+.draw-confirm-btn:hover { background: #01579b !important; }
 
 /* ── Popup unmark button ── */
 .popup-unmark-btn {

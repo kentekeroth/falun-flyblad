@@ -30,6 +30,7 @@
       <option value="">— Välj omgång —</option>
     </select>
     <button id="new-round-btn">+ Ny omgång</button>
+    <button id="post-btn" title="Markera ett område som postutdelat">Post</button>
   </div>
 
   <div class="user-info">
@@ -41,7 +42,19 @@
   </div>
 </header>
 
+<div class="map-wrap">
 <div id="map"></div>
+
+<!-- Draw panel -->
+<div id="draw-panel" class="draw-panel" hidden>
+  <span id="draw-hint">Rita ett område på kartan.</span>
+  <div class="draw-actions">
+    <button id="draw-finish-btn" onclick="drawFinishBtn()">Klar</button>
+    <button id="draw-confirm-btn" class="draw-confirm-btn" hidden onclick="drawConfirm()">Markera som postutdelat</button>
+    <button id="draw-cancel-btn" onclick="cancelDraw()">Avbryt</button>
+  </div>
+</div>
+</div>
 
 <footer>
   <div class="footer-top">

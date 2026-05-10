@@ -7,6 +7,7 @@ const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const STATE_FILE = path.join(DATA_DIR, 'state.json');
 const STREETS_CACHE = path.join(DATA_DIR, 'streets.geojson');
+const POSTAL_CENTROIDS_CACHE = path.join(DATA_DIR, 'postal_centroids.geojson');
 
 const HIGHWAY_FILTER = 'residential|primary|secondary|tertiary|unclassified|living_street';
 
@@ -36,6 +37,7 @@ let state = loadState();
 // ─── Street data (Overpass API + disk cache) ──────────────────────────────────
 
 let streetsCache = null;
+let postalCentroidsCache = null;
 
 async function getStreets() {
   if (streetsCache) return streetsCache;
@@ -84,6 +86,51 @@ async function getStreets() {
   return geojson;
 }
 
+// ─── Postal code centroid data ────────────────────────────────────────────────
+
+async function getPostalCentroids() {
+  if (postalCentroidsCache) return postalCentroidsCache;
+  if (fs.existsSync(POSTAL_CENTROIDS_CACHE)) {
+    postalCentroidsCache = JSON.parse(fs.readFileSync(POSTAL_CENTROIDS_CACHE, 'utf8'));
+    console.log(`Postal centroids loaded from cache (${postalCentroidsCache.features.length} codes)`);
+    return postalCentroidsCache;
+  }
+  console.log('Fetching postal code address nodes from Overpass…');
+  const query = `[out:json][timeout:60];area(3600300963)->.falun;node["addr:postcode"](area.falun);out;`;
+  const res = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'FalunFlyblad/1.0' },
+    body: new URLSearchParams({ data: query }),
+    signal: AbortSignal.timeout(70_000),
+  });
+  if (!res.ok) throw new Error(`Overpass returned HTTP ${res.status}`);
+  const data = await res.json();
+
+  const buckets = {};
+  for (const node of data.elements) {
+    const raw = node.tags?.['addr:postcode'];
+    if (!raw) continue;
+    const code = raw.replace(/\s+/g, '');
+    if (!buckets[code]) buckets[code] = { latSum: 0, lonSum: 0, count: 0 };
+    buckets[code].latSum += node.lat;
+    buckets[code].lonSum += node.lon;
+    buckets[code].count++;
+  }
+
+  const features = Object.entries(buckets)
+    .filter(([, v]) => v.count >= 2)
+    .map(([code, v]) => ({
+      type: 'Feature',
+      properties: { postalCode: code },
+      geometry: { type: 'Point', coordinates: [v.lonSum / v.count, v.latSum / v.count] },
+    }));
+
+  postalCentroidsCache = { type: 'FeatureCollection', features };
+  fs.writeFileSync(POSTAL_CENTROIDS_CACHE, JSON.stringify(postalCentroidsCache));
+  console.log(`Postal centroids cached (${features.length} codes)`);
+  return postalCentroidsCache;
+}
+
 // ─── Express setup ────────────────────────────────────────────────────────────
 
 app.use(express.json());
@@ -98,6 +145,11 @@ app.get('/api/streets', async (_req, res) => {
     console.error('Streets error:', err.message);
     res.status(503).json({ error: 'Kunde inte hämta gatadata: ' + err.message });
   }
+});
+
+app.get('/api/postalcodes', async (_req, res) => {
+  try { res.json(await getPostalCentroids()); }
+  catch (err) { res.status(503).json({ error: err.message }); }
 });
 
 app.delete('/api/streets/cache', (_req, res) => {
@@ -149,7 +201,7 @@ app.get('/api/rounds/:id/completions', async (req, res) => {
   const roundId = Number(req.params.id);
   const completions = state.completions
     .filter(c => c.round_id === roundId)
-    .map(({ way_id, volunteer_name, marked_at }) => ({ way_id, volunteer_name, marked_at }));
+    .map(({ way_id, volunteer_name, marked_at, source }) => ({ way_id, volunteer_name, marked_at, source: source ?? 'manual' }));
   const volunteers = state.volunteers
     .filter(v => v.round_id === roundId)
     .map(({ name, color }) => ({ name, color }));
@@ -188,6 +240,25 @@ app.delete('/api/rounds/:id/completions/:wayId', (req, res) => {
   );
   if (state.completions.length < before) saveState(state);
   res.json({ ok: true, deleted: state.completions.length < before });
+});
+
+app.post('/api/rounds/:id/completions/bulk', (req, res) => {
+  const roundId = Number(req.params.id);
+  const { wayIds, volunteerName, source = 'postal' } = req.body ?? {};
+  if (!Array.isArray(wayIds) || !wayIds.length || !volunteerName) {
+    return res.status(400).json({ error: 'wayIds (array) och volunteerName krävs' });
+  }
+  const now = new Date().toISOString();
+  let added = 0;
+  for (const wayId of wayIds) {
+    const exists = state.completions.some(c => c.round_id === roundId && c.way_id === String(wayId));
+    if (!exists) {
+      state.completions.push({ round_id: roundId, way_id: String(wayId), volunteer_name: volunteerName, marked_at: now, source });
+      added++;
+    }
+  }
+  if (added > 0) saveState(state);
+  res.json({ ok: true, added });
 });
 
 app.listen(PORT, () => console.log(`Flyblad-koordinator körs på port ${PORT}`));
