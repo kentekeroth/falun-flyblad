@@ -242,12 +242,12 @@ function drawAddPoint(e) {
 
 function drawFinish(e) {
   if (!e._synth) L.DomEvent.stop(e);
-  if (drawPoints.length < 3) return;
   map.off('click', drawAddPoint);
   map.off('dblclick', drawFinish);
   map.getContainer().style.cursor = '';
   map.doubleClickZoom.enable();
   drawActive = false;
+  if (drawPoints.length < 3) { cancelDraw(); return; }
 
   if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
   // Remove last duplicate point from double-click (not from button)
@@ -328,8 +328,11 @@ async function markStreet(wayId) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wayId, volunteerName: userName }),
   });
-  if (!res.ok) return;
-  completions.set(wayId, { volunteer_name: userName, marked_at: new Date().toISOString() });
+  if (!res.ok) {
+    setStatus('Kunde inte spara markering — kontrollera anslutningen.', 4000);
+    return;
+  }
+  completions.set(wayId, { volunteer_name: userName, marked_at: new Date().toISOString(), source: 'manual' });
   layerByWayId.get(wayId)?.setStyle(streetStyle(wayId));
   updateProgress();
 }
