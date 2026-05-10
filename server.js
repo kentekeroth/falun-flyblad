@@ -266,11 +266,12 @@ app.post('/api/rounds/:id/completions/bulk', async (req, res) => {
   res.json({ ok: true, added: rowCount });
 });
 
+// ─── Health ───────────────────────────────────────────────────────────────────
+
+app.get('/health', (_req, res) => res.json({ ok: true }));
+
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-async function start() {
-  await initDB();
-  app.listen(PORT, () => console.log(`Flyblad-koordinator körs på port ${PORT}`));
-}
+app.listen(PORT, () => console.log(`Flyblad-koordinator körs på port ${PORT}`));
 
-start().catch(err => { console.error('Startup failed:', err); process.exit(1); });
+initDB().catch(err => { console.error('DB init failed:', err); process.exit(1); });

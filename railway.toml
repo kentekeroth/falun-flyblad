@@ -3,4 +3,4 @@ builder = "NIXPACKS"
 
 [deploy]
 startCommand = "node server.js"
-healthcheckPath = "/api/rounds"
+healthcheckPath = "/health"
