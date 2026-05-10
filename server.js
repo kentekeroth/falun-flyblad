@@ -284,7 +284,7 @@ app.listen(PORT, () => console.log(`Flyblad-koordinator körs på port ${PORT}`)
 initDB()
   .then(() => { dbReady = true; console.log('DB klar'); })
   .catch(err => {
-    const msg = err.message || err.toString() || JSON.stringify(err);
+    const msg = err.message || err.errors?.[0]?.message || err.toString();
     console.error('DB init failed:', msg);
     dbError = msg;
   });
