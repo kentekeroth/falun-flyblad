@@ -152,12 +152,17 @@ let boundaryCache = null;
 async function getBoundary() {
   if (boundaryCache) return boundaryCache;
   if (fs.existsSync(BOUNDARY_CACHE)) {
-    boundaryCache = JSON.parse(fs.readFileSync(BOUNDARY_CACHE, 'utf8'));
-    console.log('Boundary loaded from cache');
-    return boundaryCache;
+    const cached = JSON.parse(fs.readFileSync(BOUNDARY_CACHE, 'utf8'));
+    if (cached.features?.length > 0) {
+      boundaryCache = cached;
+      console.log(`Boundary loaded from cache (${cached.features.length} segments)`);
+      return boundaryCache;
+    }
+    fs.unlinkSync(BOUNDARY_CACHE); // tom cache — hämta om
   }
   console.log('Fetching Falun boundary from Overpass…');
-  const query = `[out:json][timeout:60];relation(300963);way(r:"outer");out geom;`;
+  // Hämta relationen med all membergeometri inbakad
+  const query = `[out:json][timeout:60];relation(300963);out geom;`;
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'FalunFlyblad/1.0' },
@@ -167,20 +172,19 @@ async function getBoundary() {
   if (!res.ok) throw new Error(`Overpass returned HTTP ${res.status}`);
   const data = await res.json();
 
-  const geojson = {
-    type: 'FeatureCollection',
-    features: data.elements
-      .filter(e => e.geometry?.length > 1)
-      .map(way => ({
-        type: 'Feature',
-        properties: {},
-        geometry: { type: 'LineString', coordinates: way.geometry.map(p => [p.lon, p.lat]) },
-      })),
-  };
+  const rel = data.elements.find(e => e.type === 'relation');
+  const features = (rel?.members ?? [])
+    .filter(m => m.type === 'way' && m.geometry?.length > 1)
+    .map(m => ({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: m.geometry.map(p => [p.lon, p.lat]) },
+    }));
 
+  const geojson = { type: 'FeatureCollection', features };
   fs.writeFileSync(BOUNDARY_CACHE, JSON.stringify(geojson));
   boundaryCache = geojson;
-  console.log(`Boundary cached (${geojson.features.length} segments)`);
+  console.log(`Boundary cached (${features.length} segments)`);
   return geojson;
 }
 
