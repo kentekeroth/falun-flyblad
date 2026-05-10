@@ -92,15 +92,37 @@ async function loadExistingUsers() {
     const list = document.getElementById('user-list');
     list.hidden = false;
     names.forEach(name => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = name;
-      btn.onclick = () => loginAs(name);
-      list.appendChild(btn);
+      const chip = document.createElement('div');
+      chip.className = 'user-chip';
+
+      const nameBtn = document.createElement('button');
+      nameBtn.type = 'button';
+      nameBtn.className = 'user-chip-name';
+      nameBtn.textContent = name;
+      nameBtn.onclick = () => loginAs(name);
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'user-chip-del';
+      delBtn.textContent = '✕';
+      delBtn.title = `Ta bort ${name}`;
+      delBtn.onclick = () => deleteUser(name, chip);
+
+      chip.appendChild(nameBtn);
+      chip.appendChild(delBtn);
+      list.appendChild(chip);
     });
     document.getElementById('login-desc').textContent = 'Välj ditt namn eller ange ett nytt nedan.';
     document.getElementById('name-input').placeholder = 'Nytt namn…';
     document.getElementById('name-input').removeAttribute('required');
+  } catch {}
+}
+
+async function deleteUser(name, chipEl) {
+  if (!confirm(`Ta bort "${name}"? Alla deras markeringar tas också bort.`)) return;
+  try {
+    const res = await fetch(`/api/volunteers/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (res.ok) chipEl.remove();
   } catch {}
 }
 

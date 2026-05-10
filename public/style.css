@@ -201,19 +201,35 @@ footer {
   gap: 8px;
   margin-bottom: 14px;
 }
-.user-list button {
-  padding: 7px 16px;
-  background: #f0f7f3;
-  color: #1a5c34;
+.user-chip {
+  display: flex;
+  align-items: stretch;
   border: 1.5px solid #1a5c34;
   border-radius: 20px;
+  overflow: hidden;
+}
+.user-chip-name {
+  padding: 7px 14px;
+  background: #f0f7f3;
+  color: #1a5c34;
+  border: none;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
-  width: auto;
 }
-.user-list button:hover { background: #1a5c34; color: #fff; }
+.user-chip-name:hover { background: #1a5c34; color: #fff; }
+.user-chip-del {
+  padding: 7px 9px;
+  background: transparent;
+  color: #aaa;
+  border: none;
+  border-left: 1px solid #c8e0d0;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.user-chip-del:hover { background: #c0392b; color: #fff; }
 
 /* ── Postal code reference labels ── */
 .postal-label {

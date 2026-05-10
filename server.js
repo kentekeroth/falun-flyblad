@@ -251,6 +251,13 @@ app.get('/api/volunteers', async (_req, res) => {
   res.json(rows.map(r => r.name));
 });
 
+app.delete('/api/volunteers/:name', async (req, res) => {
+  const name = req.params.name;
+  await db.query('DELETE FROM completions WHERE volunteer_name = $1', [name]);
+  await db.query('DELETE FROM volunteers WHERE name = $1', [name]);
+  res.json({ ok: true });
+});
+
 app.post('/api/rounds/:id/join', async (req, res) => {
   const roundId = Number(req.params.id);
   const name = req.body?.name?.trim();
