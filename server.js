@@ -270,7 +270,12 @@ app.post('/api/rounds/:id/completions/bulk', async (req, res) => {
 
 // ─── Health ───────────────────────────────────────────────────────────────────
 
-app.get('/health', (_req, res) => res.json({ ok: true, db: dbReady, dbError }));
+app.get('/health', (_req, res) => res.json({
+  ok: true,
+  db: dbReady,
+  dbError,
+  hasDbUrl: !!process.env.DATABASE_URL,
+}));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
@@ -278,4 +283,8 @@ app.listen(PORT, () => console.log(`Flyblad-koordinator körs på port ${PORT}`)
 
 initDB()
   .then(() => { dbReady = true; console.log('DB klar'); })
-  .catch(err => { console.error('DB init failed:', err.message); dbError = err.message; });
+  .catch(err => {
+    const msg = err.message || err.toString() || JSON.stringify(err);
+    console.error('DB init failed:', msg);
+    dbError = msg;
+  });
