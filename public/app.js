@@ -432,11 +432,15 @@ async function drawConfirm() {
       layerByWayId.get(id)?.setStyle(streetStyle(id));
     });
     updateProgress();
-    setStatus(`${added} gator markerade som postutdelade.`, 4000);
+    document.getElementById('draw-hint').textContent = `${added} gator markerade som postutdelade.`;
+    btn.hidden = true;
+    const unmarkBtn = document.getElementById('draw-unmark-btn');
+    unmarkBtn.dataset.wayids = JSON.stringify(wayIds);
+    unmarkBtn.hidden = false;
   } else {
     setStatus('Kunde inte markera gator.', 3000);
+    cancelDraw();
   }
-  cancelDraw();
 }
 
 function drawFinishBtn() {
@@ -458,8 +462,41 @@ function cancelDraw() {
   document.getElementById('post-btn').classList.remove('active');
   hidePostalRefLayer();
   document.getElementById('draw-finish-btn').hidden = false;
-  document.getElementById('draw-confirm-btn').hidden = true;
   document.getElementById('draw-finish-btn').disabled = true;
+  document.getElementById('draw-confirm-btn').hidden = true;
+  document.getElementById('draw-unmark-btn').hidden = true;
+  document.getElementById('draw-unmark-btn').dataset.wayids = '';
+}
+
+async function drawUnmark() {
+  const btn = document.getElementById('draw-unmark-btn');
+  const wayIds = JSON.parse(btn.dataset.wayids || '[]');
+  if (!wayIds.length) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Avmarkerar…';
+
+  const res = await fetch(`/api/rounds/${currentRoundId}/completions/bulk`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ wayIds, volunteerName: userName }),
+  });
+
+  if (res.ok) {
+    const { deleted } = await res.json();
+    wayIds.forEach(id => {
+      completions.delete(id);
+      layerByWayId.get(id)?.setStyle(streetStyle(id));
+    });
+    updateProgress();
+    setStatus(`${deleted} gator avmarkerade.`, 4000);
+  } else {
+    setStatus('Kunde inte avmarkera gator.', 3000);
+    btn.disabled = false;
+    btn.textContent = 'Avmarkera hela området';
+    return;
+  }
+  cancelDraw();
 }
 
 // ─── Completions API ──────────────────────────────────────────────────────────

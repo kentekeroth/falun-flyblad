@@ -301,6 +301,12 @@ footer {
   border-color: #01579b !important;
 }
 .draw-confirm-btn:hover { background: #01579b !important; }
+.draw-unmark-btn {
+  background: #e53935 !important;
+  color: #fff !important;
+  border-color: #b71c1c !important;
+}
+.draw-unmark-btn:hover { background: #b71c1c !important; }
 
 /* ── Login error ── */
 .login-error {
