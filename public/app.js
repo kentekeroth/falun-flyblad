@@ -400,13 +400,19 @@ function drawFinish(e) {
   const ring = drawPoints.map(([lat, lng]) => [lng, lat]);
   const inside = getStreetsInRing(ring);
   const unmarked = inside.filter(id => !completions.has(id));
+  const marked = inside.filter(id => completions.has(id));
 
   document.getElementById('draw-hint').textContent =
-    `${inside.length} gator inom området (${unmarked.length} omärkta).`;
+    `${inside.length} gator inom området (${unmarked.length} omärkta, ${marked.length} redan markerade).`;
   document.getElementById('draw-finish-btn').hidden = true;
   document.getElementById('draw-confirm-btn').hidden = false;
   document.getElementById('draw-confirm-btn').disabled = unmarked.length === 0;
   document.getElementById('draw-confirm-btn').dataset.wayids = JSON.stringify(unmarked);
+  const unmarkBtn = document.getElementById('draw-unmark-btn');
+  unmarkBtn.hidden = marked.length === 0;
+  unmarkBtn.disabled = false;
+  unmarkBtn.textContent = 'Avmarkera hela området';
+  unmarkBtn.dataset.wayids = JSON.stringify(marked);
 }
 
 async function drawConfirm() {
