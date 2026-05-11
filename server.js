@@ -13,8 +13,8 @@ const BOUNDARY_CACHE = path.join(DATA_DIR, 'boundary.geojson');
 const HIGHWAY_FILTER = 'residential|primary|secondary|tertiary|unclassified|living_street|service|footway|path|pedestrian';
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
 
-const SUPERUSER_NAME = process.env.SUPERUSER_NAME ?? '';
-const SUPERUSER_PIN  = process.env.SUPERUSER_PIN  ?? '';
+const SUPERUSER_NAME = (process.env.SUPERUSER_NAME ?? '').trim();
+const SUPERUSER_PIN  = (process.env.SUPERUSER_PIN  ?? '').trim();
 const TOKEN_SECRET   = process.env.TOKEN_SECRET   ?? crypto.randomBytes(32).toString('hex');
 if (!process.env.TOKEN_SECRET) console.warn('TOKEN_SECRET saknas — tokens slutar gälla vid omstart');
 
