@@ -364,10 +364,15 @@ app.delete('/api/rounds/:id/completions/bulk', async (req, res) => {
   const auth = getAuth(req);
   if (!auth) return res.status(401).json({ error: 'Inte inloggad' });
   if (!auth.isSuperuser && auth.name !== volunteerName) return res.status(403).json({ error: 'Inte tillåtet' });
-  const { rowCount } = await db.query(
-    'DELETE FROM completions WHERE round_id = $1 AND way_id = ANY($2::text[]) AND volunteer_name = $3',
-    [roundId, wayIds.map(String), volunteerName]
-  );
+  const { rowCount } = auth.isSuperuser
+    ? await db.query(
+        'DELETE FROM completions WHERE round_id = $1 AND way_id = ANY($2::text[])',
+        [roundId, wayIds.map(String)]
+      )
+    : await db.query(
+        'DELETE FROM completions WHERE round_id = $1 AND way_id = ANY($2::text[]) AND volunteer_name = $3',
+        [roundId, wayIds.map(String), volunteerName]
+      );
   res.json({ ok: true, deleted: rowCount });
 });
 

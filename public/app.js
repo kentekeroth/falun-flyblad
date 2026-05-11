@@ -503,6 +503,7 @@ async function drawUnmark() {
     return;
   }
   cancelDraw();
+  await refreshCompletions();
 }
 
 // ─── Completions API ──────────────────────────────────────────────────────────
