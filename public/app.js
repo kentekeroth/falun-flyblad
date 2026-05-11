@@ -1,10 +1,18 @@
 // ─── State ────────────────────────────────────────────────────────────────────
 let userName = null;
+let authToken = null;
+let isSuperuser = false;
 let currentRoundId = null;
 let myColor = '#888';
 const completions = new Map();   // wayId → { volunteer_name, marked_at }
 const volunteerColors = new Map(); // name → color
 let totalStreets = 0;
+
+function authHeaders() {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+}
+
+function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
 
 let map = null;
 const layerByWayId = new Map();
@@ -75,7 +83,13 @@ let drawPolygon  = null;
 // ─── Bootstrap ────────────────────────────────────────────────────────────────
 async function init() {
   userName = localStorage.getItem('flyblad-user');
-  if (!userName) {
+  authToken = localStorage.getItem('flyblad-token');
+  isSuperuser = localStorage.getItem('flyblad-superuser') === '1';
+  if (!userName || !authToken) {
+    localStorage.removeItem('flyblad-user');
+    localStorage.removeItem('flyblad-token');
+    localStorage.removeItem('flyblad-superuser');
+    userName = null; authToken = null; isSuperuser = false;
     document.getElementById('login-overlay').style.display = 'flex';
     loadExistingUsers();
     return;
@@ -94,22 +108,12 @@ async function loadExistingUsers() {
     names.forEach(name => {
       const chip = document.createElement('div');
       chip.className = 'user-chip';
-
       const nameBtn = document.createElement('button');
       nameBtn.type = 'button';
       nameBtn.className = 'user-chip-name';
       nameBtn.textContent = name;
-      nameBtn.onclick = () => loginAs(name);
-
-      const delBtn = document.createElement('button');
-      delBtn.type = 'button';
-      delBtn.className = 'user-chip-del';
-      delBtn.textContent = '✕';
-      delBtn.title = `Ta bort ${name}`;
-      delBtn.onclick = () => deleteUser(name, chip);
-
+      nameBtn.onclick = () => loginAsChip(name);
       chip.appendChild(nameBtn);
-      chip.appendChild(delBtn);
       list.appendChild(chip);
     });
     document.getElementById('login-desc').textContent = 'Välj ditt namn eller ange ett nytt nedan.';
@@ -118,39 +122,90 @@ async function loadExistingUsers() {
   } catch {}
 }
 
-async function deleteUser(name, chipEl) {
-  if (!confirm(`Ta bort "${name}"? Alla deras markeringar tas också bort.`)) return;
+async function loginAsChip(name) {
   try {
-    const res = await fetch(`/api/volunteers/${encodeURIComponent(name)}`, { method: 'DELETE' });
-    if (res.ok) chipEl.remove();
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, pin: '' }),
+    });
+    if (!res.ok) return;
+    const { token, isSuperuser: superFlag } = await res.json();
+    doLogin(name, token, superFlag);
   } catch {}
 }
 
-function loginAs(name) {
-  localStorage.setItem('flyblad-user', name);
+function doLogin(name, token, superFlag) {
   userName = name;
+  authToken = token;
+  isSuperuser = superFlag;
+  localStorage.setItem('flyblad-user', name);
+  localStorage.setItem('flyblad-token', token);
+  localStorage.setItem('flyblad-superuser', superFlag ? '1' : '0');
   document.getElementById('login-overlay').style.display = 'none';
   startApp();
+}
+
+async function deleteUser(name, rowEl) {
+  if (!confirm(`Ta bort "${name}"? Alla deras markeringar tas också bort.`)) return;
+  try {
+    const res = await fetch(`/api/volunteers/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+      headers: authHeaders(),
+    });
+    if (res.ok) rowEl.remove();
+    else {
+      const { error } = await res.json().catch(() => ({}));
+      alert(error ?? 'Kunde inte ta bort användare');
+    }
+  } catch {}
 }
 
 async function startApp() {
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('user-label').textContent = userName;
+  if (isSuperuser) document.getElementById('admin-btn').hidden = false;
   initMap();
   await Promise.all([loadRounds(), loadStreets(), loadPostalRefLayer(), loadBoundary()]);
   setInterval(refreshCompletions, REFRESH_MS);
 }
 
 // ─── Login / logout ───────────────────────────────────────────────────────────
-document.getElementById('login-form').addEventListener('submit', e => {
+document.getElementById('login-form').addEventListener('submit', async e => {
   e.preventDefault();
   const name = document.getElementById('name-input').value.trim();
+  const pin = document.getElementById('pin-input').value;
   if (!name) return;
-  loginAs(name);
+  const errEl = document.getElementById('login-error');
+  errEl.hidden = true;
+  const btn = e.target.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, pin }),
+    });
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({}));
+      errEl.textContent = error ?? 'Inloggning misslyckades';
+      errEl.hidden = false;
+      return;
+    }
+    const { token, isSuperuser: superFlag } = await res.json();
+    doLogin(name, token, superFlag);
+  } catch {
+    errEl.textContent = 'Nätverksfel — försök igen';
+    errEl.hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 document.getElementById('logout-btn').addEventListener('click', () => {
   localStorage.removeItem('flyblad-user');
+  localStorage.removeItem('flyblad-token');
+  localStorage.removeItem('flyblad-superuser');
   location.reload();
 });
 
@@ -243,8 +298,8 @@ async function handleStreetClick(e, feature) {
   const byLine = isPostal
     ? `<span style="color:${POSTAL_COLOR};font-weight:600">Postutdelat</span> av <b>${comp.volunteer_name}</b>`
     : `Markerad av <b>${comp.volunteer_name}</b>`;
-  const unmarkBtn = comp.volunteer_name === userName
-    ? `<br><button class="popup-unmark-btn" onclick="popupUnmark('${wayId}')">Avmarkera</button>`
+  const unmarkBtn = (comp.volunteer_name === userName || isSuperuser)
+    ? `<br><button class="popup-unmark-btn" data-wayid="${wayId}" data-volunteer="${escapeAttr(comp.volunteer_name)}" onclick="popupUnmark(this)">Avmarkera</button>`
     : '';
 
   L.popup()
@@ -253,9 +308,11 @@ async function handleStreetClick(e, feature) {
     .openOn(map);
 }
 
-async function popupUnmark(wayId) {
+async function popupUnmark(btn) {
+  const wayId = btn.dataset.wayid;
+  const volunteer = btn.dataset.volunteer;
   map.closePopup();
-  await unmarkStreet(wayId);
+  await unmarkStreet(wayId, volunteer);
 }
 
 // ─── Postal / draw-area marking ───────────────────────────────────────────────
@@ -416,10 +473,10 @@ async function markStreet(wayId) {
   updateProgress();
 }
 
-async function unmarkStreet(wayId) {
+async function unmarkStreet(wayId, volunteerName = userName) {
   const res = await fetch(
-    `/api/rounds/${currentRoundId}/completions/${wayId}?volunteer=${encodeURIComponent(userName)}`,
-    { method: 'DELETE' }
+    `/api/rounds/${currentRoundId}/completions/${wayId}?volunteer=${encodeURIComponent(volunteerName)}`,
+    { method: 'DELETE', headers: authHeaders() }
   );
   if (!res.ok) return;
   completions.delete(wayId);
@@ -582,6 +639,42 @@ function setStatus(msg, autoHideMs = 0) {
   document.getElementById('streets-status').textContent = msg;
   if (_statusTimer) clearTimeout(_statusTimer);
   if (autoHideMs > 0) _statusTimer = setTimeout(() => setStatus(''), autoHideMs);
+}
+
+// ─── Admin panel ──────────────────────────────────────────────────────────────
+document.getElementById('admin-btn').addEventListener('click', () => {
+  const panel = document.getElementById('admin-panel');
+  if (panel.hidden) {
+    loadAdminPanel();
+    panel.hidden = false;
+  } else {
+    panel.hidden = true;
+  }
+});
+
+async function loadAdminPanel() {
+  const list = document.getElementById('admin-user-list');
+  list.textContent = 'Laddar…';
+  try {
+    const res = await fetch('/api/volunteers');
+    if (!res.ok) { list.textContent = 'Fel vid laddning'; return; }
+    const names = await res.json();
+    list.innerHTML = '';
+    if (!names.length) { list.textContent = 'Inga användare registrerade.'; return; }
+    names.forEach(name => {
+      const row = document.createElement('div');
+      row.className = 'admin-user-row';
+      const label = document.createElement('span');
+      label.textContent = name;
+      const delBtn = document.createElement('button');
+      delBtn.textContent = 'Ta bort';
+      delBtn.className = 'admin-del-btn';
+      delBtn.onclick = () => deleteUser(name, row);
+      row.appendChild(label);
+      row.appendChild(delBtn);
+      list.appendChild(row);
+    });
+  } catch { list.textContent = 'Nätverksfel'; }
 }
 
 // ─── Start ────────────────────────────────────────────────────────────────────

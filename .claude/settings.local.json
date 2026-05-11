@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(lsof -ti:3000)",
+      "Bash(xargs kill -9)",
+      "Bash(node server.js)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' -X POST https://overpass-api.de/api/interpreter -H 'Content-Type: application/x-www-form-urlencoded' --data-urlencode 'data=[out:json][timeout:90];way[\"highway\"~\"^\\(residential|primary|secondary|tertiary|unclassified|living_street\\)$\"]\\(60.560,15.560,60.655,15.740\\);out geom;')",
+      "Bash(curl -s http://localhost:3000/api/streets)",
+      "Bash(node *)",
+      "Bash(curl -s --max-time 150 http://localhost:3000/api/streets)",
+      "Bash(curl -s 'https://nominatim.openstreetmap.org/search?q=Falun+kommun+Sweden&format=json&limit=5' -H 'User-Agent: FalunFlyblad/1.0')",
+      "Bash(curl -s 'https://nominatim.openstreetmap.org/search?q=Falu+kommun+Sweden&format=json&limit=5' -H 'User-Agent: FalunFlyblad/1.0')",
+      "Bash(curl -s --max-time 200 http://localhost:3000/api/streets)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/)",
+      "Bash(curl -s http://localhost:3000/app.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/api/streets)",
+      "Bash(git --version)",
+      "Bash(gh --version)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(brew install *)",
+      "Bash(npm install *)",
+      "Bash(curl -sS https://webi.sh/gh)",
+      "Bash(sh)",
+      "Read(//usr/local/bin/**)",
+      "Bash(npm list *)",
+      "Bash(sudo npm install -g @railway/cli)",
+      "Bash(chmod -R u+rw /Users/ke_macbook/.npm/_cacache/)",
+      "Bash(git config *)",
+      "Bash(git commit -m ' *)",
+      "Bash(curl *)",
+      "Bash(kill %1)",
+      "Bash(git push *)",
+      "Bash(git commit -m 'Improve street tap accuracy on mobile with wide hit-target layer *)",
+      "Bash(git commit -m 'Expand highway filter to include service, footway, path, pedestrian *)",
+      "Bash(git commit -m 'Add Falun municipality boundary overlay on map *)",
+      "Bash(git commit -m 'Fix boundary fetch: use relation out geom and read members array *)",
+      "Bash(git commit -m 'Fix boundary: use explicit way\\(r.r\\) query instead of relation out geom *)",
+      "Bash(git commit -m 'Show existing users as clickable buttons on login screen *)",
+      "Bash(git commit -m 'Add delete button to user chips on login screen *)"
+    ]
+  }
+}

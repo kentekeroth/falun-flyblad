@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Pool } = require('pg');
 
 const app = express();
@@ -11,6 +12,38 @@ const POSTAL_CENTROIDS_CACHE = path.join(DATA_DIR, 'postal_centroids.geojson');
 const BOUNDARY_CACHE = path.join(DATA_DIR, 'boundary.geojson');
 const HIGHWAY_FILTER = 'residential|primary|secondary|tertiary|unclassified|living_street|service|footway|path|pedestrian';
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
+
+const SUPERUSER_NAME = process.env.SUPERUSER_NAME ?? '';
+const SUPERUSER_PIN  = process.env.SUPERUSER_PIN  ?? '';
+const TOKEN_SECRET   = process.env.TOKEN_SECRET   ?? crypto.randomBytes(32).toString('hex');
+if (!process.env.TOKEN_SECRET) console.warn('TOKEN_SECRET saknas — tokens slutar gälla vid omstart');
+
+function createToken(name, isSuperuser) {
+  const payload = `${name}:${isSuperuser ? '1' : '0'}:${Date.now()}`;
+  const encoded = Buffer.from(payload).toString('base64url');
+  const sig = crypto.createHmac('sha256', TOKEN_SECRET).update(encoded).digest('base64url');
+  return `${encoded}.${sig}`;
+}
+
+function verifyToken(token) {
+  if (!token) return null;
+  const dot = token.lastIndexOf('.');
+  if (dot < 0) return null;
+  const encoded = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  const expected = crypto.createHmac('sha256', TOKEN_SECRET).update(encoded).digest('base64url');
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(sig, 'base64url'), Buffer.from(expected, 'base64url'))) return null;
+  } catch { return null; }
+  const parts = Buffer.from(encoded, 'base64url').toString().split(':');
+  return { name: parts[0], isSuperuser: parts[1] === '1' };
+}
+
+function getAuth(req) {
+  const h = req.headers.authorization;
+  if (!h?.startsWith('Bearer ')) return null;
+  return verifyToken(h.slice(7));
+}
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -223,6 +256,19 @@ app.get('/api/boundary', async (_req, res) => {
   catch (err) { res.status(503).json({ error: err.message }); }
 });
 
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+app.post('/api/login', (req, res) => {
+  const { name, pin } = req.body ?? {};
+  if (!name?.trim()) return res.status(400).json({ error: 'Namn krävs' });
+  const trimmed = name.trim();
+  const isSuperuser = !!(SUPERUSER_NAME && trimmed === SUPERUSER_NAME && SUPERUSER_PIN && pin === SUPERUSER_PIN);
+  if (SUPERUSER_NAME && trimmed === SUPERUSER_NAME && !isSuperuser) {
+    return res.status(401).json({ error: 'Fel PIN-kod' });
+  }
+  res.json({ token: createToken(trimmed, isSuperuser), isSuperuser });
+});
+
 // ─── Rounds ───────────────────────────────────────────────────────────────────
 
 app.get('/api/rounds', async (_req, res) => {
@@ -252,6 +298,7 @@ app.get('/api/volunteers', async (_req, res) => {
 });
 
 app.delete('/api/volunteers/:name', async (req, res) => {
+  if (!getAuth(req)?.isSuperuser) return res.status(403).json({ error: 'Inte tillåtet' });
   const name = req.params.name;
   await db.query('DELETE FROM completions WHERE volunteer_name = $1', [name]);
   await db.query('DELETE FROM volunteers WHERE name = $1', [name]);
@@ -308,6 +355,9 @@ app.delete('/api/rounds/:id/completions/:wayId', async (req, res) => {
   const wayId = req.params.wayId;
   const volunteerName = req.query.volunteer;
   if (!volunteerName) return res.status(400).json({ error: 'volunteer query-param krävs' });
+  const auth = getAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Inte inloggad' });
+  if (!auth.isSuperuser && auth.name !== volunteerName) return res.status(403).json({ error: 'Inte tillåtet' });
   const { rowCount } = await db.query(
     'DELETE FROM completions WHERE round_id = $1 AND way_id = $2 AND volunteer_name = $3',
     [roundId, wayId, volunteerName]
