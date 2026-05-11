@@ -355,21 +355,6 @@ app.post('/api/rounds/:id/completions', async (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete('/api/rounds/:id/completions/:wayId', async (req, res) => {
-  const roundId = Number(req.params.id);
-  const wayId = req.params.wayId;
-  const volunteerName = req.query.volunteer;
-  if (!volunteerName) return res.status(400).json({ error: 'volunteer query-param krävs' });
-  const auth = getAuth(req);
-  if (!auth) return res.status(401).json({ error: 'Inte inloggad' });
-  if (!auth.isSuperuser && auth.name !== volunteerName) return res.status(403).json({ error: 'Inte tillåtet' });
-  const { rowCount } = await db.query(
-    'DELETE FROM completions WHERE round_id = $1 AND way_id = $2 AND volunteer_name = $3',
-    [roundId, wayId, volunteerName]
-  );
-  res.json({ ok: true, deleted: rowCount > 0 });
-});
-
 app.delete('/api/rounds/:id/completions/bulk', async (req, res) => {
   const roundId = Number(req.params.id);
   const { wayIds, volunteerName } = req.body ?? {};
@@ -384,6 +369,21 @@ app.delete('/api/rounds/:id/completions/bulk', async (req, res) => {
     [roundId, wayIds.map(String), volunteerName]
   );
   res.json({ ok: true, deleted: rowCount });
+});
+
+app.delete('/api/rounds/:id/completions/:wayId', async (req, res) => {
+  const roundId = Number(req.params.id);
+  const wayId = req.params.wayId;
+  const volunteerName = req.query.volunteer;
+  if (!volunteerName) return res.status(400).json({ error: 'volunteer query-param krävs' });
+  const auth = getAuth(req);
+  if (!auth) return res.status(401).json({ error: 'Inte inloggad' });
+  if (!auth.isSuperuser && auth.name !== volunteerName) return res.status(403).json({ error: 'Inte tillåtet' });
+  const { rowCount } = await db.query(
+    'DELETE FROM completions WHERE round_id = $1 AND way_id = $2 AND volunteer_name = $3',
+    [roundId, wayId, volunteerName]
+  );
+  res.json({ ok: true, deleted: rowCount > 0 });
 });
 
 app.post('/api/rounds/:id/completions/bulk', async (req, res) => {
