@@ -6,7 +6,17 @@ let currentRoundId = null;
 let myColor = '#888';
 const completions = new Map();   // wayId → { volunteer_name, marked_at }
 const volunteerColors = new Map(); // name → color
+const lengthByWayId = new Map();   // wayId → meters
 let totalStreets = 0;
+
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 function authHeaders() {
   return authToken ? { Authorization: `Bearer ${authToken}` } : {};
@@ -232,6 +242,15 @@ async function loadStreets() {
       throw new Error(error ?? `HTTP ${res.status}`);
     }
     const geojson = await res.json();
+
+    geojson.features.forEach(f => {
+      const lines = f.geometry.type === 'MultiLineString' ? f.geometry.coordinates : [f.geometry.coordinates];
+      let len = 0;
+      for (const line of lines)
+        for (let i = 1; i < line.length; i++)
+          len += haversineMeters(line[i-1][1], line[i-1][0], line[i][1], line[i][0]);
+      lengthByWayId.set(f.properties.id, len);
+    });
 
     // Visual layer — non-interactive, used only for styling
     L.geoJSON(geojson, {
@@ -662,16 +681,29 @@ function updateProgress() {
   empty.className = 'progress-empty';
   bar.appendChild(empty);
 
+  // Competition: meters per volunteer, manual only (no postal)
+  const meters = new Map();
+  completions.forEach((c, wayId) => {
+    if (c.source === 'postal') return;
+    const len = lengthByWayId.get(wayId) ?? 0;
+    meters.set(c.volunteer_name, (meters.get(c.volunteer_name) ?? 0) + len);
+  });
+  // Include volunteers who only did postal (0 manual km)
+  counts.forEach((_, name) => { if (!meters.has(name)) meters.set(name, 0); });
+  const sorted = [...meters.entries()].sort((a, b) => b[1] - a[1]);
+
   // Legend
   const legend = document.getElementById('volunteer-legend');
   legend.innerHTML = '';
-  counts.forEach((count, name) => {
+  sorted.forEach(([name, m], i) => {
     const color = volunteerColors.get(name) ?? '#888';
+    const km = (m / 1000).toFixed(1);
+    const medal = i === 0 && m > 0 ? ' 👑' : '';
     const item = document.createElement('span');
     item.className = 'legend-item';
     item.innerHTML =
       `<span class="color-dot" style="background:${color}"></span>` +
-      `${name} (${count})`;
+      `${name}: ${km} km${medal}`;
     legend.appendChild(item);
   });
 }
