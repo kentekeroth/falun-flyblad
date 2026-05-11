@@ -262,6 +262,15 @@ app.get('/api/config', (_req, res) => {
   res.json({ superuserName: SUPERUSER_NAME });
 });
 
+app.get('/api/debug-auth', (_req, res) => {
+  res.json({
+    superuserNameLength: SUPERUSER_NAME.length,
+    superuserNameFirst3: SUPERUSER_NAME.slice(0, 3),
+    superuserPinLength: SUPERUSER_PIN.length,
+    superuserPinSet: SUPERUSER_PIN.length > 0,
+  });
+});
+
 app.post('/api/login', (req, res) => {
   const { name, pin } = req.body ?? {};
   if (!name?.trim()) return res.status(400).json({ error: 'Namn krävs' });
