@@ -99,13 +99,15 @@ async function init() {
 
 async function loadExistingUsers() {
   try {
-    const res = await fetch('/api/volunteers');
-    if (!res.ok) return;
-    const names = await res.json();
+    const [volRes, cfgRes] = await Promise.all([fetch('/api/volunteers'), fetch('/api/config')]);
+    if (!volRes.ok) return;
+    const names = await volRes.json();
+    const { superuserName = '' } = cfgRes.ok ? await cfgRes.json() : {};
     if (!names.length) return;
     const list = document.getElementById('user-list');
     list.hidden = false;
     names.forEach(name => {
+      if (name === superuserName) return; // superuser måste logga in via formuläret med PIN
       const chip = document.createElement('div');
       chip.className = 'user-chip';
       const nameBtn = document.createElement('button');
@@ -164,7 +166,10 @@ async function deleteUser(name, rowEl) {
 async function startApp() {
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('user-label').textContent = userName;
-  if (isSuperuser) document.getElementById('admin-btn').hidden = false;
+  if (isSuperuser) {
+    document.getElementById('admin-btn').hidden = false;
+    document.getElementById('user-label').textContent = userName + ' ★';
+  }
   initMap();
   await Promise.all([loadRounds(), loadStreets(), loadPostalRefLayer(), loadBoundary()]);
   setInterval(refreshCompletions, REFRESH_MS);

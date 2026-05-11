@@ -258,6 +258,10 @@ app.get('/api/boundary', async (_req, res) => {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+app.get('/api/config', (_req, res) => {
+  res.json({ superuserName: SUPERUSER_NAME });
+});
+
 app.post('/api/login', (req, res) => {
   const { name, pin } = req.body ?? {};
   if (!name?.trim()) return res.status(400).json({ error: 'Namn krävs' });
