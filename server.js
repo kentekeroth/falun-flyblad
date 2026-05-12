@@ -77,6 +77,10 @@ async function initDB() {
       source TEXT NOT NULL DEFAULT 'manual',
       PRIMARY KEY (round_id, way_id)
     );
+    CREATE TABLE IF NOT EXISTS way_metadata (
+      way_id TEXT PRIMARY KEY,
+      household_count INTEGER NOT NULL DEFAULT 0
+    );
   `);
   console.log('Databas initialiserad');
 }
