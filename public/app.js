@@ -597,16 +597,18 @@ async function loadRounds() {
   const select = document.getElementById('round-select');
   select.innerHTML = '<option value="">— Välj omgång —</option>';
   rounds.forEach(r => addRoundOption(r));
-  if (rounds.length === 1) {
-    select.value = String(rounds[0].id);
-    await selectRound(rounds[0].id);
+  const active = rounds.find(r => r.is_active);
+  const autoSelect = active ?? (rounds.length === 1 ? rounds[0] : null);
+  if (autoSelect) {
+    select.value = String(autoSelect.id);
+    await selectRound(autoSelect.id);
   }
 }
 
-function addRoundOption({ id, name }) {
+function addRoundOption({ id, name, is_active }) {
   const opt = document.createElement('option');
   opt.value = String(id);
-  opt.textContent = name;
+  opt.textContent = is_active ? `${name} ✓` : name;
   document.getElementById('round-select').appendChild(opt);
 }
 
@@ -774,6 +776,43 @@ document.getElementById('admin-btn').addEventListener('click', () => {
 });
 
 async function loadAdminPanel() {
+  await Promise.all([loadAdminRounds(), loadAdminUsers()]);
+}
+
+async function loadAdminRounds() {
+  const list = document.getElementById('admin-round-list');
+  list.textContent = 'Laddar…';
+  try {
+    const res = await fetch('/api/rounds');
+    const rounds = await res.json();
+    list.innerHTML = '';
+    if (!rounds.length) { list.textContent = 'Inga omgångar.'; return; }
+    rounds.forEach(r => {
+      const row = document.createElement('div');
+      row.className = 'admin-user-row';
+      const label = document.createElement('span');
+      label.textContent = r.is_active ? `${r.name} ✓` : r.name;
+      label.style.fontWeight = r.is_active ? 'bold' : '';
+      const toggleBtn = document.createElement('button');
+      toggleBtn.textContent = r.is_active ? 'Avsluta' : 'Aktivera';
+      toggleBtn.className = 'admin-del-btn';
+      toggleBtn.onclick = async () => {
+        await fetch(`/api/rounds/${r.id}/activate`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          body: JSON.stringify({ activate: !r.is_active }),
+        });
+        await loadRounds();
+        await loadAdminRounds();
+      };
+      row.appendChild(label);
+      row.appendChild(toggleBtn);
+      list.appendChild(row);
+    });
+  } catch { list.textContent = 'Nätverksfel'; }
+}
+
+async function loadAdminUsers() {
   const list = document.getElementById('admin-user-list');
   list.textContent = 'Laddar…';
   try {

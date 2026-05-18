@@ -61,8 +61,10 @@ async function initDB() {
     CREATE TABLE IF NOT EXISTS rounds (
       id BIGINT PRIMARY KEY,
       name TEXT UNIQUE NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      is_active BOOLEAN NOT NULL DEFAULT FALSE
     );
+    ALTER TABLE rounds ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT FALSE;
     CREATE TABLE IF NOT EXISTS volunteers (
       round_id BIGINT NOT NULL,
       name TEXT NOT NULL,
@@ -290,8 +292,17 @@ app.post('/api/login', (req, res) => {
 // ─── Rounds ───────────────────────────────────────────────────────────────────
 
 app.get('/api/rounds', async (_req, res) => {
-  const { rows } = await db.query('SELECT id, name, created_at FROM rounds ORDER BY created_at DESC');
+  const { rows } = await db.query('SELECT id, name, created_at, is_active FROM rounds ORDER BY created_at DESC');
   res.json(rows);
+});
+
+app.patch('/api/rounds/:id/activate', async (req, res) => {
+  if (!getAuth(req)?.isSuperuser) return res.status(403).json({ error: 'Inte tillåtet' });
+  const id = Number(req.params.id);
+  const { activate } = req.body ?? {};
+  await db.query('UPDATE rounds SET is_active = FALSE');
+  if (activate) await db.query('UPDATE rounds SET is_active = TRUE WHERE id = $1', [id]);
+  res.json({ ok: true });
 });
 
 app.post('/api/rounds', async (req, res) => {
