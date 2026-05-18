@@ -7,6 +7,8 @@ let myColor = '#888';
 const completions = new Map();   // wayId → { volunteer_name, marked_at }
 const volunteerColors = new Map(); // name → color
 const lengthByWayId = new Map();   // wayId → meters
+const householdsByWayId = new Map(); // wayId → household_count
+const SCORE_KM_FACTOR = 2.0; // poäng = hushåll × (1 + km × faktor)
 let totalStreets = 0;
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
@@ -181,7 +183,7 @@ async function startApp() {
     document.getElementById('user-label').textContent = userName + ' ★';
   }
   initMap();
-  await Promise.all([loadRounds(), loadStreets(), loadPostalRefLayer(), loadBoundary()]);
+  await Promise.all([loadRounds(), loadStreets(), loadPostalRefLayer(), loadBoundary(), loadWayMetadata()]);
   setInterval(refreshCompletions, REFRESH_MS);
 }
 
@@ -285,6 +287,15 @@ async function loadStreets() {
   } catch (err) {
     setStatus('Fel: ' + err.message);
   }
+}
+
+async function loadWayMetadata() {
+  try {
+    const res = await fetch('/api/way-metadata');
+    if (!res.ok) return;
+    const data = await res.json();
+    Object.entries(data).forEach(([id, count]) => householdsByWayId.set(id, count));
+  } catch (_) {}
 }
 
 function streetStyle(wayId) {
@@ -681,29 +692,30 @@ function updateProgress() {
   empty.className = 'progress-empty';
   bar.appendChild(empty);
 
-  // Competition: meters per volunteer, manual only (no postal)
-  const meters = new Map();
+  // Competition: poäng = hushåll × (1 + km × faktor), manual only (no postal)
+  const scores = new Map();
   completions.forEach((c, wayId) => {
     if (c.source === 'postal') return;
-    const len = lengthByWayId.get(wayId) ?? 0;
-    meters.set(c.volunteer_name, (meters.get(c.volunteer_name) ?? 0) + len);
+    const hushall = householdsByWayId.get(String(wayId)) ?? 0;
+    if (hushall === 0) return;
+    const km = (lengthByWayId.get(wayId) ?? 0) / 1000;
+    const pts = hushall * (1 + km * SCORE_KM_FACTOR);
+    scores.set(c.volunteer_name, (scores.get(c.volunteer_name) ?? 0) + pts);
   });
-  // Include volunteers who only did postal (0 manual km)
-  counts.forEach((_, name) => { if (!meters.has(name)) meters.set(name, 0); });
-  const sorted = [...meters.entries()].sort((a, b) => b[1] - a[1]);
+  counts.forEach((_, name) => { if (!scores.has(name)) scores.set(name, 0); });
+  const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
 
   // Legend
   const legend = document.getElementById('volunteer-legend');
   legend.innerHTML = '';
-  sorted.forEach(([name, m], i) => {
+  sorted.forEach(([name, pts], i) => {
     const color = volunteerColors.get(name) ?? '#888';
-    const km = (m / 1000).toFixed(1);
-    const medal = i === 0 && m > 0 ? ' 👑' : '';
+    const medal = i === 0 && pts > 0 ? ' 👑' : '';
     const item = document.createElement('span');
     item.className = 'legend-item';
     item.innerHTML =
       `<span class="color-dot" style="background:${color}"></span>` +
-      `${name}: ${km} km${medal}`;
+      `${name}: ${Math.round(pts)} p${medal}`;
     legend.appendChild(item);
   });
 }

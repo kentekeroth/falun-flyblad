@@ -260,6 +260,15 @@ app.get('/api/boundary', async (_req, res) => {
   catch (err) { res.status(503).json({ error: err.message }); }
 });
 
+app.get('/api/way-metadata', async (_req, res) => {
+  try {
+    const { rows } = await db.query('SELECT way_id, household_count FROM way_metadata');
+    const result = {};
+    rows.forEach(r => { result[r.way_id] = r.household_count; });
+    res.json(result);
+  } catch (err) { res.status(503).json({ error: err.message }); }
+});
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 app.get('/api/config', (_req, res) => {
