@@ -694,6 +694,7 @@ function updateProgress() {
 
   // Competition: poäng = hushåll × (1 + km × faktor), manual only (no postal)
   const scores = new Map();
+  const scoreDetails = new Map(); // name → { hushall, meters }
   completions.forEach((c, wayId) => {
     if (c.source === 'postal') return;
     const hushall = householdsByWayId.get(String(wayId)) ?? 0;
@@ -701,6 +702,10 @@ function updateProgress() {
     const km = (lengthByWayId.get(wayId) ?? 0) / 1000;
     const pts = hushall * (1 + km * SCORE_KM_FACTOR);
     scores.set(c.volunteer_name, (scores.get(c.volunteer_name) ?? 0) + pts);
+    const d = scoreDetails.get(c.volunteer_name) ?? { hushall: 0, meters: 0 };
+    d.hushall += hushall;
+    d.meters += lengthByWayId.get(wayId) ?? 0;
+    scoreDetails.set(c.volunteer_name, d);
   });
   counts.forEach((_, name) => { if (!scores.has(name)) scores.set(name, 0); });
   const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
@@ -711,8 +716,11 @@ function updateProgress() {
   sorted.forEach(([name, pts], i) => {
     const color = volunteerColors.get(name) ?? '#888';
     const medal = i === 0 && pts > 0 ? ' 👑' : '';
+    const d = scoreDetails.get(name);
+    const tooltip = d ? `${d.hushall} hushåll · ${(d.meters / 1000).toFixed(1)} km` : 'inga poäng';
     const item = document.createElement('span');
     item.className = 'legend-item';
+    item.title = tooltip;
     item.innerHTML =
       `<span class="color-dot" style="background:${color}"></span>` +
       `${name}: ${Math.round(pts)} p${medal}`;
