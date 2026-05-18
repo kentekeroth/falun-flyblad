@@ -180,6 +180,8 @@ async function startApp() {
   document.getElementById('user-label').textContent = userName;
   if (isSuperuser) {
     document.getElementById('admin-btn').hidden = false;
+    document.getElementById('new-round-btn').hidden = false;
+    document.getElementById('delete-round-btn').hidden = false;
     document.getElementById('user-label').textContent = userName + ' ★';
   }
   initMap();
@@ -630,6 +632,24 @@ document.getElementById('new-round-btn').addEventListener('click', async () => {
   addRoundOption(round);
   document.getElementById('round-select').value = String(round.id);
   await selectRound(round.id);
+});
+
+document.getElementById('delete-round-btn').addEventListener('click', async () => {
+  if (!currentRoundId) { setStatus('Välj en omgång att ta bort.', 3000); return; }
+  const select = document.getElementById('round-select');
+  const name = select.options[select.selectedIndex]?.text ?? currentRoundId;
+  if (!confirm(`Ta bort omgången "${name}" och alla dess markeringar?`)) return;
+  const res = await fetch(`/api/rounds/${currentRoundId}`, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${authToken}` },
+  });
+  if (!res.ok) { const { error } = await res.json().catch(() => ({})); setStatus(error ?? 'Kunde inte ta bort', 4000); return; }
+  select.options[select.selectedIndex].remove();
+  currentRoundId = null;
+  completions.clear();
+  volunteerColors.clear();
+  updateProgress();
+  setStatus(`Omgången "${name}" borttagen.`, 4000);
 });
 
 document.getElementById('refresh-btn').addEventListener('click', refreshCompletions);

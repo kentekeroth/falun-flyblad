@@ -295,6 +295,7 @@ app.get('/api/rounds', async (_req, res) => {
 });
 
 app.post('/api/rounds', async (req, res) => {
+  if (!getAuth(req)?.isSuperuser) return res.status(403).json({ error: 'Inte tillåtet' });
   const name = req.body?.name?.trim();
   if (!name) return res.status(400).json({ error: 'Namn krävs' });
   const id = Date.now();
@@ -306,6 +307,15 @@ app.post('/api/rounds', async (req, res) => {
     if (err.code === '23505') return res.status(409).json({ error: 'En omgång med det namnet finns redan' });
     throw err;
   }
+});
+
+app.delete('/api/rounds/:id', async (req, res) => {
+  if (!getAuth(req)?.isSuperuser) return res.status(403).json({ error: 'Inte tillåtet' });
+  const id = Number(req.params.id);
+  await db.query('DELETE FROM completions WHERE round_id = $1', [id]);
+  await db.query('DELETE FROM volunteers WHERE round_id = $1', [id]);
+  await db.query('DELETE FROM rounds WHERE id = $1', [id]);
+  res.json({ ok: true });
 });
 
 // ─── Volunteers ───────────────────────────────────────────────────────────────
