@@ -79,6 +79,7 @@ async function initDB() {
       source TEXT NOT NULL DEFAULT 'manual',
       PRIMARY KEY (round_id, way_id)
     );
+    ALTER TABLE completions ADD COLUMN IF NOT EXISTS leaflet_name TEXT;
     CREATE TABLE IF NOT EXISTS way_metadata (
       way_id TEXT PRIMARY KEY,
       household_count INTEGER NOT NULL DEFAULT 0
@@ -368,7 +369,7 @@ app.post('/api/rounds/:id/join', async (req, res) => {
 app.get('/api/rounds/:id/completions', async (req, res) => {
   const roundId = Number(req.params.id);
   const [{ rows: completions }, { rows: volunteers }] = await Promise.all([
-    db.query('SELECT way_id, volunteer_name, marked_at, source FROM completions WHERE round_id = $1', [roundId]),
+    db.query('SELECT way_id, volunteer_name, marked_at, source, leaflet_name FROM completions WHERE round_id = $1', [roundId]),
     db.query('SELECT name, color FROM volunteers WHERE round_id = $1', [roundId]),
   ]);
   let totalStreets = 0;
@@ -378,13 +379,13 @@ app.get('/api/rounds/:id/completions', async (req, res) => {
 
 app.post('/api/rounds/:id/completions', async (req, res) => {
   const roundId = Number(req.params.id);
-  const { wayId, volunteerName } = req.body ?? {};
+  const { wayId, volunteerName, leafletName } = req.body ?? {};
   if (!wayId || !volunteerName) return res.status(400).json({ error: 'wayId och volunteerName krävs' });
   await db.query(
-    `INSERT INTO completions (round_id, way_id, volunteer_name, marked_at, source)
-     VALUES ($1, $2, $3, $4, 'manual')
-     ON CONFLICT (round_id, way_id) DO UPDATE SET volunteer_name = $3, marked_at = $4, source = 'manual'`,
-    [roundId, String(wayId), volunteerName, new Date().toISOString()]
+    `INSERT INTO completions (round_id, way_id, volunteer_name, marked_at, source, leaflet_name)
+     VALUES ($1, $2, $3, $4, 'manual', $5)
+     ON CONFLICT (round_id, way_id) DO UPDATE SET volunteer_name = $3, marked_at = $4, source = 'manual', leaflet_name = $5`,
+    [roundId, String(wayId), volunteerName, new Date().toISOString(), leafletName || null]
   );
   res.json({ ok: true });
 });
@@ -427,15 +428,15 @@ app.delete('/api/rounds/:id/completions/:wayId', async (req, res) => {
 
 app.post('/api/rounds/:id/completions/bulk', async (req, res) => {
   const roundId = Number(req.params.id);
-  const { wayIds, volunteerName, source = 'postal' } = req.body ?? {};
+  const { wayIds, volunteerName, source = 'postal', leafletName } = req.body ?? {};
   if (!Array.isArray(wayIds) || !wayIds.length || !volunteerName) {
     return res.status(400).json({ error: 'wayIds (array) och volunteerName krävs' });
   }
   const { rowCount } = await db.query(
-    `INSERT INTO completions (round_id, way_id, volunteer_name, marked_at, source)
-     SELECT $1, unnest($2::text[]), $3, $4, $5
+    `INSERT INTO completions (round_id, way_id, volunteer_name, marked_at, source, leaflet_name)
+     SELECT $1, unnest($2::text[]), $3, $4, $5, $6
      ON CONFLICT DO NOTHING`,
-    [roundId, wayIds.map(String), volunteerName, new Date().toISOString(), source]
+    [roundId, wayIds.map(String), volunteerName, new Date().toISOString(), source, leafletName || null]
   );
   res.json({ ok: true, added: rowCount });
 });

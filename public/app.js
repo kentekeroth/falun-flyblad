@@ -25,6 +25,7 @@ function authHeaders() {
 }
 
 function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+function escapeHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 let map = null;
 const layerByWayId = new Map();
@@ -324,7 +325,24 @@ async function handleStreetClick(e, feature) {
   const comp = completions.get(wayId);
 
   if (!comp) {
-    await markStreet(wayId);
+    const streetName = feature.properties.name || 'Okänd gata';
+    const saved = localStorage.getItem('lastLeafletName') || '';
+    const escapedWayId = escapeAttr(String(wayId));
+    L.popup()
+      .setLatLng(e.latlng)
+      .setContent(
+        `<b>${streetName}</b><br>` +
+        `<label style="display:block;margin:6px 0 2px">Flygblad:<br>` +
+        `<input id="mark-leaflet-input" value="${escapeAttr(saved)}" placeholder="Ange flygblad…" ` +
+        `style="width:170px;margin-top:3px;padding:2px 4px" ` +
+        `onkeydown="if(event.key==='Enter')confirmMarkStreet('${escapedWayId}')"></label>` +
+        `<div style="margin-top:6px;display:flex;gap:6px">` +
+        `<button onclick="confirmMarkStreet('${escapedWayId}')">Markera</button>` +
+        `<button onclick="map.closePopup()">Avbryt</button>` +
+        `</div>`
+      )
+      .openOn(map);
+    setTimeout(() => document.getElementById('mark-leaflet-input')?.focus(), 50);
     return;
   }
 
@@ -335,14 +353,23 @@ async function handleStreetClick(e, feature) {
   const byLine = isPostal
     ? `<span style="color:${POSTAL_COLOR};font-weight:600">Postutdelat</span> av <b>${comp.volunteer_name}</b>`
     : `Markerad av <b>${comp.volunteer_name}</b>`;
+  const leafletLine = comp.leaflet_name ? `<br>Flygblad: <i>${escapeHtml(comp.leaflet_name)}</i>` : '';
   const unmarkBtn = (comp.volunteer_name === userName || isSuperuser)
     ? `<br><button class="popup-unmark-btn" data-wayid="${wayId}" data-volunteer="${escapeAttr(comp.volunteer_name)}" onclick="popupUnmark(this)">Avmarkera</button>`
     : '';
 
   L.popup()
     .setLatLng(e.latlng)
-    .setContent(`<b>${streetName}</b><br>${byLine}<br>${formatted}${unmarkBtn}`)
+    .setContent(`<b>${streetName}</b><br>${byLine}<br>${formatted}${leafletLine}${unmarkBtn}`)
     .openOn(map);
+}
+
+async function confirmMarkStreet(wayId) {
+  const input = document.getElementById('mark-leaflet-input');
+  const leafletName = input ? input.value.trim() : '';
+  if (leafletName) localStorage.setItem('lastLeafletName', leafletName);
+  map.closePopup();
+  await markStreet(wayId, leafletName);
 }
 
 async function popupUnmark(btn) {
@@ -440,6 +467,12 @@ function drawFinish(e) {
   document.getElementById('draw-confirm-btn').hidden = false;
   document.getElementById('draw-confirm-btn').disabled = unmarked.length === 0;
   document.getElementById('draw-confirm-btn').dataset.wayids = JSON.stringify(unmarked);
+  const leafletRow = document.getElementById('draw-leaflet-row');
+  if (leafletRow) {
+    leafletRow.style.display = unmarked.length > 0 ? '' : 'none';
+    const li = document.getElementById('draw-leaflet-input');
+    if (li && !li.value) li.value = localStorage.getItem('lastLeafletName') || '';
+  }
   const unmarkBtn = document.getElementById('draw-unmark-btn');
   unmarkBtn.hidden = marked.length === 0;
   unmarkBtn.disabled = false;
@@ -453,20 +486,24 @@ async function drawConfirm() {
   const wayIds = JSON.parse(btn.dataset.wayids || '[]');
   if (!wayIds.length) return;
 
+  const leafletInput = document.getElementById('draw-leaflet-input');
+  const leafletName = leafletInput ? leafletInput.value.trim() : '';
+  if (leafletName) localStorage.setItem('lastLeafletName', leafletName);
+
   btn.disabled = true;
   btn.textContent = 'Markerar…';
 
   const res = await fetch(`/api/rounds/${currentRoundId}/completions/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ wayIds, volunteerName: userName, source: 'postal' }),
+    body: JSON.stringify({ wayIds, volunteerName: userName, source: 'postal', leafletName: leafletName || undefined }),
   });
 
   if (res.ok) {
     const { added } = await res.json();
     const now = new Date().toISOString();
     wayIds.forEach(id => {
-      completions.set(id, { volunteer_name: userName, marked_at: now, source: 'postal' });
+      completions.set(id, { volunteer_name: userName, marked_at: now, source: 'postal', leaflet_name: leafletName || null });
       layerByWayId.get(id)?.setStyle(streetStyle(id));
     });
     updateProgress();
@@ -504,6 +541,8 @@ function cancelDraw() {
   document.getElementById('draw-confirm-btn').hidden = true;
   document.getElementById('draw-unmark-btn').hidden = true;
   document.getElementById('draw-unmark-btn').dataset.wayids = '';
+  const lr = document.getElementById('draw-leaflet-row');
+  if (lr) lr.style.display = 'none';
 }
 
 async function drawUnmark() {
@@ -539,17 +578,17 @@ async function drawUnmark() {
 }
 
 // ─── Completions API ──────────────────────────────────────────────────────────
-async function markStreet(wayId) {
+async function markStreet(wayId, leafletName = '') {
   const res = await fetch(`/api/rounds/${currentRoundId}/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ wayId, volunteerName: userName }),
+    body: JSON.stringify({ wayId, volunteerName: userName, leafletName: leafletName || undefined }),
   });
   if (!res.ok) {
     setStatus('Kunde inte spara markering — kontrollera anslutningen.', 4000);
     return;
   }
-  completions.set(wayId, { volunteer_name: userName, marked_at: new Date().toISOString(), source: 'manual' });
+  completions.set(wayId, { volunteer_name: userName, marked_at: new Date().toISOString(), source: 'manual', leaflet_name: leafletName || null });
   layerByWayId.get(wayId)?.setStyle(streetStyle(wayId));
   updateProgress();
 }
