@@ -179,6 +179,7 @@ async function deleteUser(name, rowEl) {
 async function startApp() {
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('user-label').textContent = userName;
+  setLeafletName(localStorage.getItem('lastLeafletName') || '');
   if (isSuperuser) {
     document.getElementById('admin-btn').hidden = false;
     document.getElementById('new-round-btn').hidden = false;
@@ -325,24 +326,7 @@ async function handleStreetClick(e, feature) {
   const comp = completions.get(wayId);
 
   if (!comp) {
-    const streetName = feature.properties.name || 'Okänd gata';
-    const saved = localStorage.getItem('lastLeafletName') || '';
-    const escapedWayId = escapeAttr(String(wayId));
-    L.popup()
-      .setLatLng(e.latlng)
-      .setContent(
-        `<b>${streetName}</b><br>` +
-        `<label style="display:block;margin:6px 0 2px">Flygblad:<br>` +
-        `<input id="mark-leaflet-input" value="${escapeAttr(saved)}" placeholder="Ange flygblad…" ` +
-        `style="width:170px;margin-top:3px;padding:2px 4px" ` +
-        `onkeydown="if(event.key==='Enter')confirmMarkStreet('${escapedWayId}')"></label>` +
-        `<div style="margin-top:6px;display:flex;gap:6px">` +
-        `<button onclick="confirmMarkStreet('${escapedWayId}')">Markera</button>` +
-        `<button onclick="map.closePopup()">Avbryt</button>` +
-        `</div>`
-      )
-      .openOn(map);
-    setTimeout(() => document.getElementById('mark-leaflet-input')?.focus(), 50);
+    await markStreet(wayId, localStorage.getItem('lastLeafletName') || '');
     return;
   }
 
@@ -364,12 +348,35 @@ async function handleStreetClick(e, feature) {
     .openOn(map);
 }
 
-async function confirmMarkStreet(wayId) {
-  const input = document.getElementById('mark-leaflet-input');
-  const leafletName = input ? input.value.trim() : '';
-  if (leafletName) localStorage.setItem('lastLeafletName', leafletName);
-  map.closePopup();
-  await markStreet(wayId, leafletName);
+function setLeafletName(name) {
+  if (name) localStorage.setItem('lastLeafletName', name);
+  else localStorage.removeItem('lastLeafletName');
+  const display = document.getElementById('leaflet-display');
+  const btn = document.getElementById('leaflet-edit-btn');
+  if (display) display.textContent = name || 'Inget valt';
+  if (btn) btn.textContent = name ? 'Ändra' : 'Ange';
+}
+
+function leafletIndicatorEdit() {
+  const name = localStorage.getItem('lastLeafletName') || '';
+  const input = document.getElementById('leaflet-edit-input');
+  if (input) input.value = name;
+  document.getElementById('leaflet-display').hidden = true;
+  document.getElementById('leaflet-edit-btn').hidden = true;
+  document.getElementById('leaflet-edit-form').hidden = false;
+  input?.focus();
+}
+
+function leafletIndicatorSave() {
+  const input = document.getElementById('leaflet-edit-input');
+  setLeafletName(input ? input.value.trim() : '');
+  leafletIndicatorCancel();
+}
+
+function leafletIndicatorCancel() {
+  document.getElementById('leaflet-display').hidden = false;
+  document.getElementById('leaflet-edit-btn').hidden = false;
+  document.getElementById('leaflet-edit-form').hidden = true;
 }
 
 async function popupUnmark(btn) {
@@ -488,7 +495,7 @@ async function drawConfirm() {
 
   const leafletInput = document.getElementById('draw-leaflet-input');
   const leafletName = leafletInput ? leafletInput.value.trim() : '';
-  if (leafletName) localStorage.setItem('lastLeafletName', leafletName);
+  if (leafletName) setLeafletName(leafletName);
 
   btn.disabled = true;
   btn.textContent = 'Markerar…';

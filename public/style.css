@@ -97,6 +97,19 @@ footer {
 
 #progress-text { color: #444; font-size: 13px; }
 
+.leaflet-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #555;
+}
+.leaflet-label { flex-shrink: 0; }
+#leaflet-display { font-weight: 600; color: #222; min-width: 60px; }
+#leaflet-edit-btn { font-size: 11px; padding: 1px 6px; }
+#leaflet-edit-input { padding: 2px 4px; font-size: 12px; width: 160px; }
+
 #refresh-btn {
   font-size: 12px;
   padding: 3px 8px;
