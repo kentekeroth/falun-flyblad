@@ -270,6 +270,13 @@ footer {
   color: #fff;
 }
 
+/* ── Freehand button active state ── */
+#freehand-btn.active {
+  background: #e65100;
+  border-color: #bf360c;
+  color: #fff;
+}
+
 /* ── Draw panel ── */
 .draw-panel {
   position: absolute;

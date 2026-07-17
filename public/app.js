@@ -89,6 +89,8 @@ function hidePostalRefLayer() {
 
 // ─── Draw state ───────────────────────────────────────────────────────────────
 let drawActive = false;
+let drawMode = null;       // 'postal' | 'freehand'
+let freehandDrawing = false;
 const drawPoints = [];   // [[lat, lng], ...]
 let drawPolyline = null;
 let drawPolygon  = null;
@@ -420,6 +422,8 @@ function getStreetsInRing(ring) {
 }
 
 function startDraw() {
+  if (drawActive) cancelDraw();
+  drawMode = 'postal';
   drawActive = true;
   drawPoints.length = 0;
   if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
@@ -493,9 +497,13 @@ async function drawConfirm() {
   const wayIds = JSON.parse(btn.dataset.wayids || '[]');
   if (!wayIds.length) return;
 
-  const leafletInput = document.getElementById('draw-leaflet-input');
-  const leafletName = leafletInput ? leafletInput.value.trim() : '';
-  if (leafletName) setLeafletName(leafletName);
+  const source = drawMode === 'freehand' ? 'manual' : 'postal';
+  let leafletName = '';
+  if (drawMode === 'postal') {
+    const leafletInput = document.getElementById('draw-leaflet-input');
+    leafletName = leafletInput ? leafletInput.value.trim() : '';
+    if (leafletName) setLeafletName(leafletName);
+  }
 
   btn.disabled = true;
   btn.textContent = 'Markerar…';
@@ -503,18 +511,19 @@ async function drawConfirm() {
   const res = await fetch(`/api/rounds/${currentRoundId}/completions/bulk`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ wayIds, volunteerName: userName, source: 'postal', leafletName: leafletName || undefined }),
+    body: JSON.stringify({ wayIds, volunteerName: userName, source, leafletName: leafletName || undefined }),
   });
 
   if (res.ok) {
     const { added } = await res.json();
     const now = new Date().toISOString();
     wayIds.forEach(id => {
-      completions.set(id, { volunteer_name: userName, marked_at: now, source: 'postal', leaflet_name: leafletName || null });
+      completions.set(id, { volunteer_name: userName, marked_at: now, source, leaflet_name: leafletName || null });
       layerByWayId.get(id)?.setStyle(streetStyle(id));
     });
     updateProgress();
-    document.getElementById('draw-hint').textContent = `${added} gator markerade som postutdelade.`;
+    const label = drawMode === 'postal' ? 'postutdelade' : 'utdelade';
+    document.getElementById('draw-hint').textContent = `${added} gator markerade som ${label}.`;
     btn.hidden = true;
     const unmarkBtn = document.getElementById('draw-unmark-btn');
     unmarkBtn.dataset.wayids = JSON.stringify(wayIds);
@@ -533,15 +542,23 @@ function drawFinishBtn() {
 
 function cancelDraw() {
   drawActive = false;
+  freehandDrawing = false;
+  drawMode = null;
   drawPoints.length = 0;
   map.off('click', drawAddPoint);
   map.off('dblclick', drawFinish);
-  map.getContainer().style.cursor = '';
+  const container = map.getContainer();
+  container.removeEventListener('mousedown', freehandOnMouseDown);
+  container.removeEventListener('mousemove', freehandOnMouseMove);
+  document.removeEventListener('mouseup', freehandOnMouseUp);
+  map.dragging.enable();
+  container.style.cursor = '';
   map.doubleClickZoom.enable();
   if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
   if (drawPolygon)  { map.removeLayer(drawPolygon);  drawPolygon  = null; }
   document.getElementById('draw-panel').hidden = true;
   document.getElementById('post-btn').classList.remove('active');
+  document.getElementById('freehand-btn').classList.remove('active');
   hidePostalRefLayer();
   document.getElementById('draw-finish-btn').hidden = false;
   document.getElementById('draw-finish-btn').disabled = true;
@@ -550,6 +567,98 @@ function cancelDraw() {
   document.getElementById('draw-unmark-btn').dataset.wayids = '';
   const lr = document.getElementById('draw-leaflet-row');
   if (lr) lr.style.display = 'none';
+}
+
+// ─── Freehand draw ────────────────────────────────────────────────────────────
+function startFreehand() {
+  if (!currentRoundId) { setStatus('Välj en omgång först.', 3000); return; }
+  if (drawActive) cancelDraw();
+  drawMode = 'freehand';
+  drawActive = true;
+  drawPoints.length = 0;
+  if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
+  if (drawPolygon)  { map.removeLayer(drawPolygon);  drawPolygon  = null; }
+  map.getContainer().style.cursor = 'crosshair';
+  document.getElementById('freehand-btn').classList.add('active');
+  document.getElementById('draw-panel').hidden = false;
+  document.getElementById('draw-hint').textContent = 'Håll ner musknappen och rita ett område. Släpp för att markera.';
+  document.getElementById('draw-finish-btn').hidden = true;
+  document.getElementById('draw-confirm-btn').hidden = true;
+  document.getElementById('draw-unmark-btn').hidden = true;
+  const leafletRow = document.getElementById('draw-leaflet-row');
+  if (leafletRow) leafletRow.style.display = 'none';
+  map.getContainer().addEventListener('mousedown', freehandOnMouseDown);
+}
+
+function freehandOnMouseDown(e) {
+  if (e.button !== 0 || freehandDrawing) return;
+  freehandDrawing = true;
+  drawPoints.length = 0;
+  if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
+  if (drawPolygon)  { map.removeLayer(drawPolygon);  drawPolygon  = null; }
+  document.getElementById('draw-confirm-btn').hidden = true;
+  document.getElementById('draw-unmark-btn').hidden = true;
+  document.getElementById('draw-hint').textContent = 'Rita… (släpp när du är klar)';
+  map.dragging.disable();
+  const rect = map.getContainer().getBoundingClientRect();
+  const latlng = map.containerPointToLatLng(L.point(e.clientX - rect.left, e.clientY - rect.top));
+  drawPoints.push([latlng.lat, latlng.lng]);
+  map.getContainer().addEventListener('mousemove', freehandOnMouseMove);
+  document.addEventListener('mouseup', freehandOnMouseUp);
+  e.preventDefault();
+}
+
+function freehandOnMouseMove(e) {
+  if (!freehandDrawing) return;
+  const rect = map.getContainer().getBoundingClientRect();
+  const px = L.point(e.clientX - rect.left, e.clientY - rect.top);
+  if (drawPoints.length > 0) {
+    const last = drawPoints[drawPoints.length - 1];
+    const lastPx = map.latLngToContainerPoint(L.latLng(last[0], last[1]));
+    const dx = px.x - lastPx.x, dy = px.y - lastPx.y;
+    if (dx * dx + dy * dy < 36) return;
+  }
+  const latlng = map.containerPointToLatLng(px);
+  drawPoints.push([latlng.lat, latlng.lng]);
+  if (drawPoints.length >= 2) {
+    if (drawPolyline) {
+      drawPolyline.setLatLngs([...drawPoints, drawPoints[0]]);
+    } else {
+      drawPolyline = L.polyline([...drawPoints, drawPoints[0]], {
+        color: myColor, weight: 2, dashArray: '6 4',
+      }).addTo(map);
+    }
+  }
+}
+
+function freehandOnMouseUp(e) {
+  if (!freehandDrawing) return;
+  freehandDrawing = false;
+  map.dragging.enable();
+  map.getContainer().removeEventListener('mousemove', freehandOnMouseMove);
+  document.removeEventListener('mouseup', freehandOnMouseUp);
+  if (drawPoints.length < 3) {
+    document.getElementById('draw-hint').textContent = 'Håll ner musknappen och rita ett område. Släpp för att markera.';
+    return;
+  }
+  if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
+  drawPolygon = L.polygon(drawPoints, { color: myColor, weight: 2, fillOpacity: 0.15 }).addTo(map);
+  const ring = drawPoints.map(([lat, lng]) => [lng, lat]);
+  const inside = getStreetsInRing(ring);
+  const unmarked = inside.filter(id => !completions.has(id));
+  const marked   = inside.filter(id => completions.has(id));
+  document.getElementById('draw-hint').textContent =
+    `${inside.length} gator inom området (${unmarked.length} omärkta, ${marked.length} redan markerade).`;
+  const confirmBtn = document.getElementById('draw-confirm-btn');
+  confirmBtn.textContent = 'Markera som utdelat';
+  confirmBtn.hidden = false;
+  confirmBtn.disabled = unmarked.length === 0;
+  confirmBtn.dataset.wayids = JSON.stringify(unmarked);
+  const unmarkBtn = document.getElementById('draw-unmark-btn');
+  unmarkBtn.hidden = marked.length === 0;
+  unmarkBtn.disabled = false;
+  unmarkBtn.textContent = 'Avmarkera hela området';
+  unmarkBtn.dataset.wayids = JSON.stringify(marked);
 }
 
 async function drawUnmark() {
@@ -702,6 +811,7 @@ document.getElementById('delete-round-btn').addEventListener('click', async () =
 
 document.getElementById('refresh-btn').addEventListener('click', refreshCompletions);
 document.getElementById('post-btn').addEventListener('click', startDraw);
+document.getElementById('freehand-btn').addEventListener('click', startFreehand);
 
 async function selectRound(roundId) {
   currentRoundId = roundId;
