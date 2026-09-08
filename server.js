@@ -15,6 +15,7 @@ const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
 
 const SUPERUSER_NAME = (process.env.SUPERUSER_NAME ?? '').trim();
 const SUPERUSER_PIN  = (process.env.SUPERUSER_PIN  ?? '').trim();
+const BUILD_SHA = (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || 'dev').slice(0, 7);
 const TOKEN_SECRET   = process.env.TOKEN_SECRET   ?? crypto.randomBytes(32).toString('hex');
 if (!process.env.TOKEN_SECRET) console.warn('TOKEN_SECRET saknas — tokens slutar gälla vid omstart');
 
@@ -230,7 +231,17 @@ async function getBoundary() {
 // ─── Express setup ────────────────────────────────────────────────────────────
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// index.html serveras dynamiskt så att app.js kan cache-bustas per deploy
+// (annars kan webbläsare/mellanled fortsätta servera en gammal app.js efter release).
+app.get('/', (_req, res) => {
+  const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8')
+    .replace('src="app.js"', `src="app.js?v=${BUILD_SHA}"`);
+  res.set('Cache-Control', 'no-store');
+  res.type('html').send(html);
+});
+
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // ─── Streets ──────────────────────────────────────────────────────────────────
 
@@ -275,7 +286,7 @@ app.get('/api/way-metadata', async (_req, res) => {
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 app.get('/api/config', (_req, res) => {
-  res.json({ superuserName: SUPERUSER_NAME });
+  res.json({ superuserName: SUPERUSER_NAME, buildSha: BUILD_SHA });
 });
 
 
@@ -448,6 +459,7 @@ app.get('/health', (_req, res) => res.json({
   db: dbReady,
   dbError,
   hasDbUrl: !!process.env.DATABASE_URL,
+  buildSha: BUILD_SHA,
 }));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
