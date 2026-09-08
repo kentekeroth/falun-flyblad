@@ -778,7 +778,7 @@ document.getElementById('new-round-btn').addEventListener('click', async () => {
   if (!name?.trim()) return;
   const res = await fetch('/api/rounds', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify({ name: name.trim() }),
   });
   if (!res.ok) {
