@@ -19,6 +19,12 @@ const BUILD_SHA = (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT_
 const TOKEN_SECRET   = process.env.TOKEN_SECRET   ?? crypto.randomBytes(32).toString('hex');
 if (!process.env.TOKEN_SECRET) console.warn('TOKEN_SECRET saknas — tokens slutar gälla vid omstart');
 
+// Jämför namn oberoende av skiftläge/mellanslag, så att t.ex. "Kent Ekeroth"
+// eller "kentekeroth" inte kan smyga förbi PIN-skyddet för superuser-kontot.
+function normalizeName(s) {
+  return (s ?? '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
 function createToken(name, isSuperuser) {
   const payload = `${name}:${isSuperuser ? '1' : '0'}:${Date.now()}`;
   const encoded = Buffer.from(payload).toString('base64url');
@@ -294,8 +300,9 @@ app.post('/api/login', (req, res) => {
   const { name, pin } = req.body ?? {};
   if (!name?.trim()) return res.status(400).json({ error: 'Namn krävs' });
   const trimmed = name.trim();
-  const isSuperuser = !!(SUPERUSER_NAME && trimmed === SUPERUSER_NAME && SUPERUSER_PIN && pin === SUPERUSER_PIN);
-  if (SUPERUSER_NAME && trimmed === SUPERUSER_NAME && !isSuperuser) {
+  const matchesSuperuserName = SUPERUSER_NAME && normalizeName(trimmed) === normalizeName(SUPERUSER_NAME);
+  const isSuperuser = !!(matchesSuperuserName && SUPERUSER_PIN && pin === SUPERUSER_PIN);
+  if (matchesSuperuserName && !isSuperuser) {
     return res.status(401).json({ error: 'Fel PIN-kod' });
   }
   res.json({ token: createToken(trimmed, isSuperuser), isSuperuser });
@@ -360,6 +367,9 @@ app.post('/api/rounds/:id/join', async (req, res) => {
   const roundId = Number(req.params.id);
   const name = req.body?.name?.trim();
   if (!name) return res.status(400).json({ error: 'Namn krävs' });
+  if (SUPERUSER_NAME && normalizeName(name) === normalizeName(SUPERUSER_NAME)) {
+    return res.status(403).json({ error: 'Det namnet är reserverat — logga in via formuläret med PIN-kod' });
+  }
 
   const { rows: existing } = await db.query(
     'SELECT round_id, name, color FROM volunteers WHERE round_id = $1 AND name = $2',

@@ -121,8 +121,9 @@ async function loadExistingUsers() {
     if (!names.length) return;
     const list = document.getElementById('user-list');
     list.hidden = false;
+    const normalize = s => (s ?? '').trim().toLowerCase().replace(/\s+/g, '');
     names.forEach(name => {
-      if (name === superuserName) return; // superuser måste logga in via formuläret med PIN
+      if (superuserName && normalize(name) === normalize(superuserName)) return; // superuser måste logga in via formuläret med PIN
       const chip = document.createElement('div');
       chip.className = 'user-chip';
       const nameBtn = document.createElement('button');
