@@ -191,6 +191,7 @@ async function startApp() {
   }
   initMap();
   await Promise.all([loadRounds(), loadStreets(), loadPostalRefLayer(), loadBoundary(), loadWayMetadata()]);
+  await loadAllTimeTotals();
   setInterval(refreshCompletions, REFRESH_MS);
 }
 
@@ -721,6 +722,41 @@ async function unmarkStreet(wayId, volunteerName = userName) {
   updateProgress();
 }
 
+// Totalpoäng ackumulerat över ALLA omgångar (inte bara vald omgång) —
+// samma poängformel som per-omgångs-legenden, men på completions/all.
+async function loadAllTimeTotals() {
+  const legend = document.getElementById('alltime-legend');
+  if (!legend) return;
+  try {
+    const res = await fetch('/api/completions/all');
+    if (!res.ok) return;
+    const rows = await res.json();
+
+    const scores = new Map();
+    rows.forEach(c => {
+      if (c.source === 'postal') return;
+      const hushall = householdsByWayId.get(String(c.way_id)) ?? 0;
+      if (hushall === 0) return;
+      const km = (lengthByWayId.get(String(c.way_id)) ?? 0) / 1000;
+      const pts = hushall * (1 + km * SCORE_KM_FACTOR);
+      scores.set(c.volunteer_name, (scores.get(c.volunteer_name) ?? 0) + pts);
+    });
+    const sorted = [...scores.entries()].sort((a, b) => b[1] - a[1]);
+
+    legend.innerHTML = '';
+    sorted.forEach(([name, pts], i) => {
+      const color = volunteerColors.get(name) ?? '#888';
+      const medal = i === 0 && pts > 0 ? ' 👑' : '';
+      const item = document.createElement('span');
+      item.className = 'legend-item';
+      item.innerHTML =
+        `<span class="color-dot" style="background:${color}"></span>` +
+        `${name}: ${Math.round(pts)} p${medal}`;
+      legend.appendChild(item);
+    });
+  } catch {}
+}
+
 async function refreshCompletions() {
   if (!currentRoundId) return;
   try {
@@ -743,6 +779,7 @@ async function refreshCompletions() {
     if (data.totalStreets) totalStreets = data.totalStreets;
     refreshStreetStyles();
     updateProgress();
+    loadAllTimeTotals();
   } catch {}
 }
 

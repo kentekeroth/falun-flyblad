@@ -142,6 +142,21 @@ footer {
   font-size: 13px;
   color: #444;
 }
+.alltime-wrap {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #ddd;
+}
+.alltime-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  white-space: nowrap;
+}
 .legend-item {
   display: flex;
   align-items: center;

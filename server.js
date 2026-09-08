@@ -385,6 +385,13 @@ app.post('/api/rounds/:id/join', async (req, res) => {
   res.json({ round_id: roundId, name, color });
 });
 
+// Completions över ALLA omgångar — underlag för totalpoäng som ackumuleras
+// mellan omgångar (kartan visar bara vald omgång, men totalen räknar allt).
+app.get('/api/completions/all', async (_req, res) => {
+  const { rows } = await db.query('SELECT way_id, volunteer_name, source FROM completions');
+  res.json(rows);
+});
+
 // ─── Completions ──────────────────────────────────────────────────────────────
 
 app.get('/api/rounds/:id/completions', async (req, res) => {
